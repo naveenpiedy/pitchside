@@ -197,6 +197,23 @@ def compare(
         _show(pl.compare(e, names, role, parse_cli_filters(filter), _csv(by), _csv(metrics) or None))
 
 
+@app.command("archetypes")
+def archetypes_cmd(
+    role: str = ROLE_OPT,
+    summary: bool = typer.Option(False, "--summary", "-s", help="Counts per archetype"),
+    archetype: str = typer.Option(None, "--archetype", "-a", help="Only this archetype (contains)"),
+    min_balls: int = typer.Option(None, "--min-balls"),
+    comp: list[str] = COMP_OPT,
+    filter: list[str] = FILTER_OPT,
+) -> None:
+    """Rule-based player archetypes, e.g. `archetypes -f season=2024+ --summary`."""
+    from pitchside.stats import archetypes as ar
+
+    with _engine(comp) as e:
+        f = parse_cli_filters(filter)
+        _show(ar.archetype_summary(e, role, f, min_balls) if summary else ar.archetypes(e, role, f, min_balls, archetype))
+
+
 @app.command("true")
 def true_cmd(
     name: str,
@@ -229,12 +246,14 @@ def baselines(
                                help="bat_runs bat_out bat_dot bat_bnd bowl_runs bowl_wkt bowl_dot bowl_bnd"),
     phase: str = typer.Option(None, "--phase", "-p"),
 ) -> None:
-    """Inspect true-stat situation factors (wickets down x setting/chasing, per rules era and phase)."""
+    """Inspect true-stat factors: situation (wickets down x setting/chasing) and settle (balls already faced),
+    per rules era and phase."""
     con = connect(get_tournament(tournament).db_path, read_only=True)
     try:
-        sql = ("SELECT era, phase, wickets_down, innings, round(factor, 3) AS factor, weight "
+        sql = ("SELECT kind, era, phase, wickets_down, innings, balls_faced, round(factor, 3) AS factor, weight "
                "FROM baseline_factors WHERE target = ?" + (" AND phase = ?" if phase else "") +
-               " ORDER BY era, CASE phase WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END, wickets_down, innings")
+               " ORDER BY kind DESC, era, CASE phase WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END, "
+               "wickets_down, innings, balls_faced")
         cur = con.execute(sql, [target, phase] if phase else [target])
         _show(Table([c[0] for c in cur.description], [list(r) for r in cur.fetchall()],
                     title=f"{tournament} {target} factors (1 = the over's season average)"))

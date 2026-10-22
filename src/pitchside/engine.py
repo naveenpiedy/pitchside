@@ -61,11 +61,17 @@ SELECT d.*, m.competition, m.season_year, m.match_date, m.venue, m.city, m.stage
        bat.batting_hand AS batter_hand, ns.batting_hand AS non_striker_hand,
        coalesce(bwl.bowl_type, 'unknown') AS bowl_type, bwl.bowl_subtype, bwl.bowling_arm,
        e.exp_bat_runs, e.exp_bat_out, e.exp_bat_dot, e.exp_bat_bnd,
-       e.exp_bowl_runs, e.exp_bowl_wkt, e.exp_bowl_dot, e.exp_bowl_bnd
+       e.exp_bowl_runs, e.exp_bowl_wkt, e.exp_bowl_dot, e.exp_bowl_bnd,
+       bo1.entry_legal_balls AS batter_entry_balls, bo1.entry_wickets AS batter_entry_wickets,
+       bo2.entry_legal_balls AS non_striker_entry_balls, bo2.entry_wickets AS non_striker_entry_wickets
 FROM v_deliveries_raw d
 JOIN v_matches m USING (match_id)
 JOIN v_innings i USING (match_id, innings_no)
 LEFT JOIN v_expected_raw e USING (match_id, innings_no, seq)
+LEFT JOIN v_batting_order_raw bo1
+       ON bo1.match_id = d.match_id AND bo1.innings_no = d.innings_no AND bo1.player_id = d.batter_id
+LEFT JOIN v_batting_order_raw bo2
+       ON bo2.match_id = d.match_id AND bo2.innings_no = d.innings_no AND bo2.player_id = d.non_striker_id
 LEFT JOIN reg.player_attributes bat ON bat.player_id = d.batter_id
 LEFT JOIN reg.player_attributes ns  ON ns.player_id  = d.non_striker_id
 LEFT JOIN reg.player_attributes bwl ON bwl.player_id = d.bowler_id
@@ -83,6 +89,8 @@ SELECT batter_id AS player_id, {CONTEXT_COLS},
        batting_team AS team_name, bowling_team AS opposition_name,
        batting_position AS position, batter_hand AS batting_hand,
        batter_balls_before + 1 AS nth_ball,
+       batter_entry_balls AS entry_balls, batter_entry_balls // 6 + 1 AS entry_over,
+       batter_entry_wickets AS entry_wickets,
        runs_batter AS runs, is_ball_faced::INT AS faced,
        (is_ball_faced AND runs_batter = 0)::INT AS dot,
        is_four::INT AS fours, is_six::INT AS sixes,
@@ -93,7 +101,8 @@ UNION ALL
 SELECT non_striker_id, {CONTEXT_COLS},
        batting_franchise, bowling_franchise, batting_team, bowling_team,
        non_striker_position, non_striker_hand,
-       NULL, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
+       NULL, non_striker_entry_balls, non_striker_entry_balls // 6 + 1, non_striker_entry_wickets,
+       0, 0, 0, 0, 0, 1, 0, 0, 0, 0
 FROM v_balls WHERE out_player_id = non_striker_id
 """
 
@@ -104,6 +113,9 @@ SELECT bowler_id AS player_id, {CONTEXT_COLS},
        bowling_team AS team_name, batting_team AS opposition_name,
        batting_position AS position, batter_hand AS batting_hand,
        batter_balls_before + 1 AS nth_ball,
+       -- entry state of the batter being bowled to
+       batter_entry_balls AS entry_balls, batter_entry_balls // 6 + 1 AS entry_over,
+       batter_entry_wickets AS entry_wickets,
        is_legal::INT AS balls, bowler_runs AS runs,
        is_bowler_wicket::INT AS wickets,
        (is_legal AND bowler_runs = 0)::INT AS dot,
@@ -361,7 +373,7 @@ def open_engine(competitions: list[str] | None = None, locked: bool = False,
                           [t.key]).fetchone()[0]
         if not has:
             raise FileNotFoundError(f"Competition {t.key!r} has no true-stat baselines; run `pitchside rebuild {t.key}`")
-    for table in ("matches", "innings", "deliveries", "expected"):
+    for table in ("matches", "innings", "deliveries", "expected", "batting_order"):
         con.execute(f"CREATE OR REPLACE TEMP VIEW v_{table}_raw AS {union(table)}")
     con.execute("CREATE OR REPLACE TEMP VIEW v_players AS SELECT player_id, any_value(name) AS name "
                 f"FROM ({union('players')}) GROUP BY player_id")

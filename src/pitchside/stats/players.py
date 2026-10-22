@@ -15,6 +15,7 @@ from pitchside.stats.table import Table
 PROFILE_SECTIONS = {
     "batting": [("by season", ["season"]), ("by phase", ["phase"]), ("vs pace / spin", ["bowl_type"]),
                 ("vs bowling subtype", ["bowl_subtype"]), ("by position", ["position"]),
+                ("by entry point", ["entry_phase"]),
                 ("setting / chasing", ["setting_chasing"])],
     "bowling": [("by season", ["season"]), ("by phase", ["phase"]),
                 ("vs left / right-handers", ["batting_hand"]), ("setting / chasing", ["setting_chasing"])],
@@ -55,6 +56,9 @@ def profile(engine: Engine, player: str, filters: dict | None = None) -> list[Ta
             if balls < MIN_ROLE_BALLS:
                 overall.notes.append(f"breakdowns skipped below {MIN_ROLE_BALLS} balls")
                 continue
+            label = player_archetype(engine, name, role, filters)
+            if label:
+                overall.notes.append(f"archetype: {label}")
             for label, by in PROFILE_SECTIONS[role]:
                 tables.append(aggregate(engine, role, filters, by=by, players=[pid], title=f"{name}: {role} {label}"))
             for label, by in TRUE_SECTIONS:
@@ -114,3 +118,13 @@ def true_stats(engine: Engine, player: str, role: str = "batting", by: list[str]
                filters: dict | None = None) -> Table:
     """A player's true stats (actual, expected, difference), split by any dimensions."""
     return splits(engine, player, role, by or [], filters, TRUE_METRICS[role])
+
+
+def player_archetype(engine: Engine, name: str, role: str, filters: dict | None = None) -> str | None:
+    """The player's archetype under these filters, or None below the archetype ball minimum."""
+    from pitchside.stats.archetypes import archetypes
+
+    for r in archetypes(engine, role, filters).records():
+        if r["player"] == name:
+            return r["archetype"]
+    return None

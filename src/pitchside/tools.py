@@ -453,3 +453,16 @@ def scratch_drop(name: str) -> str:
         e.con.execute(f"DROP TABLE scratch.{name}")
         e.con.execute("DELETE FROM scratch._catalog WHERE name = ?", [name])
         return f"dropped scratch.{name}"
+
+
+# --- archetypes (add-on A2) ---------------------------------------------------
+
+def archetypes(role: Role = "batting", filters: Filters = None, archetype: str | None = None,
+               summary: bool = False, min_balls: int | None = None, competitions: Competitions = None) -> str:
+    """Rule-based player archetypes with the features behind each label."""
+    from pitchside.stats import archetypes as ar
+
+    with _engine(competitions) as e:
+        if summary:
+            return _render(ar.archetype_summary(e, role, filters, min_balls))
+        return _render(ar.archetypes(e, role, filters, min_balls, archetype))

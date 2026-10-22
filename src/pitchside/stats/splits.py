@@ -7,7 +7,7 @@ to `aggregate` with different dimensions, filters and ordering.
 from __future__ import annotations
 
 from pitchside.engine import Engine
-from pitchside.stats.filters import FilterError, compile_filters
+from pitchside.stats.filters import ENTRY_PHASE_SQL, FilterError, compile_filters
 from pitchside.stats.table import Table
 
 DIMENSIONS: dict[str, str] = {
@@ -33,6 +33,12 @@ DIMENSIONS: dict[str, str] = {
     "ball_bucket": ("CASE WHEN nth_ball <= 5 THEN '01-05' WHEN nth_ball <= 10 THEN '06-10' "
                     "WHEN nth_ball <= 20 THEN '11-20' WHEN nth_ball <= 30 THEN '21-30' ELSE '31+' END"),
     "wickets_down": "wickets_before",
+    # Entry point (A4): when the batter walked in. Openers arrive at ball 0.
+    "entry_phase": ENTRY_PHASE_SQL,
+    "entry_bucket": ("CASE WHEN entry_balls = 0 THEN '00 opener' WHEN entry_over <= 6 THEN '01-06' "
+                     "WHEN entry_over <= 10 THEN '07-10' WHEN entry_over <= 15 THEN '11-15' ELSE '16-20' END"),
+    "entry_over": "entry_over",
+    "entry_wickets": "entry_wickets",
     "player": "player_id",
     "bowler": "bowler_id",
     "batter": "batter_id",
@@ -42,6 +48,8 @@ ID_DIMENSIONS = {"player", "bowler", "batter"}
 ORDERED = {
     "season": "season", "over": "over", "position": "position", "ball_bucket": "ball_bucket",
     "order_group": "order_group",
+    "entry_phase": "CASE entry_phase WHEN 'opener' THEN 0 WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END",
+    "entry_bucket": "entry_bucket", "entry_over": "entry_over", "entry_wickets": "entry_wickets",
     "phase": "CASE phase WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END",
     "setting_chasing": "min(innings_no)", "wickets_down": "wickets_down",
 }

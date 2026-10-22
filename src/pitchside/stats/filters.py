@@ -33,6 +33,9 @@ class Spec:
     aliases: tuple[tuple[str, str], ...] = ()
 
 
+ENTRY_PHASE_SQL = ("CASE WHEN entry_balls = 0 THEN 'opener' WHEN entry_over <= 6 THEN 'powerplay' "
+                   "WHEN entry_over <= 15 THEN 'middle' ELSE 'death' END")
+
 FILTERS: dict[str, Spec] = {
     "season": Spec("season_year", "int", "season year(s), e.g. 2024, 2022-2025, 2020+"),
     "competition": Spec("competition", "exact", "competition key, e.g. ipl"),
@@ -57,6 +60,10 @@ FILTERS: dict[str, Spec] = {
     "position": Spec("position", "int", "batting position 1-11, e.g. 1-3"),
     "nth_ball": Spec("nth_ball", "int", "the batter's nth ball of the innings, e.g. 1-5 (first five balls)"),
     "wickets_down": Spec("wickets_before", "int", "team wickets down before the ball"),
+    "entry_phase": Spec(ENTRY_PHASE_SQL, "enum", "when the batter walked in: opener / powerplay / middle / death",
+                        ("opener", "powerplay", "middle", "death")),
+    "entry_over": Spec("entry_over", "int", "over the batter walked in (1-20; openers too), e.g. 7-10"),
+    "entry_wickets": Spec("entry_wickets", "int", "team wickets down when the batter walked in"),
     "date": Spec("match_date", "date", "date or range YYYY-MM-DD..YYYY-MM-DD"),
     "match": Spec("match_id", "exact", "Cricsheet match id(s)"),
     "bowler": Spec("bowler_id", "player", "facing a specific bowler (name or id)"),

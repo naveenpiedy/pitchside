@@ -81,7 +81,8 @@ def test_ipl_true_stats_zero_sum_and_flat():
 
         # Situation-adjusted: league true SR is ~flat across wickets down and setting/chasing.
         # (Wickets 8 and 9 share a factor, so only cells with real volume are checked.)
-        for dim in ("wickets_down", "setting_chasing", "phase"):
+        # ball_bucket / entry_bucket: new and late-arriving batters aren't penalised for being new.
+        for dim in ("wickets_down", "setting_chasing", "phase", "ball_bucket", "entry_bucket"):
             league = aggregate(e, "batting", by=[dim], metrics=["balls", "true_sr"]).records()
             assert all(abs(r["true_sr"]) < 3 for r in league if r["balls"] >= 5000), league
             league = aggregate(e, "bowling", by=[dim], metrics=["balls", "true_economy"]).records()

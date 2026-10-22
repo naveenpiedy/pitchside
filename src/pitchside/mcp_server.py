@@ -83,6 +83,10 @@ TOOLS: dict[str, tuple[Callable, str, ToolAnnotations]] = {
                       "top players.", READ_ONLY),
     "team_ranking": (tools.team_ranking, "Teams ranked by a team metric (e.g. run_rate) for a side and filters.",
                      READ_ONLY),
+    "archetypes": (tools.archetypes,
+                   "Player archetypes (e.g. Powerplay enforcer, Anchor opener, Middle-overs aggressor, Finisher; "
+                   "Death specialist, New-ball seamer, Middle-overs spinner) with the features behind each label. "
+                   "summary=true for counts per archetype; archetype='finisher' to filter.", READ_ONLY),
     "scorecard": (tools.scorecard, "Match scorecard; optionally partnerships and over-by-over.", READ_ONLY),
     # SQL
     "query": (tools.query,
