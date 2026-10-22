@@ -198,6 +198,8 @@ def fetch_attributes(refresh: bool = False, log=print) -> dict[str, int]:
             if pid not in rows or (refresh and rows[pid]["source"] == "wikipedia")]
     with_ci = [p for p in todo if p[2]]
     log(f"{len(players)} players loaded, {len(todo)} to fetch ({len(with_ci)} with a Cricinfo id)")
+    if not todo:
+        return {"fetched": 0, "classified": 0, "not_found": 0}
 
     with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True) as client:
         titles = lookup_articles(client, [ci for _, _, ci in with_ci])

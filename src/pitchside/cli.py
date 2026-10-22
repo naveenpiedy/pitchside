@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 
 import typer
 
@@ -10,6 +11,7 @@ from pitchside.config import get_tournament, load_tournaments
 from pitchside.engine import NameNotFound, PlayerNotFound, open_engine
 from pitchside.etl import attributes as attrs
 from pitchside.etl.download import download
+from pitchside.etl.quality import summarize
 from pitchside.etl.load import connect, iter_zip, load_matches, rebuild as rebuild_db
 from pitchside.etl.register import connect_registry, load_attributes, refresh_register
 from pitchside.stats import cache
@@ -23,8 +25,10 @@ from pitchside.stats.table import Table
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 attributes_app = typer.Typer(no_args_is_help=True, help="Batting hand / bowling style per player.")
 cache_app = typer.Typer(no_args_is_help=True, help="The analysis result cache.")
+schedule_app = typer.Typer(no_args_is_help=True, help="Daily sync via Windows Task Scheduler.")
 app.add_typer(attributes_app, name="attributes")
 app.add_typer(cache_app, name="cache")
+app.add_typer(schedule_app, name="schedule")
 
 COMP_OPT = typer.Option(None, "--comp", "-c", help="Competition key(s); default all loaded")
 FILTER_OPT = typer.Option(None, "--filter", "-f", help="key=value, repeatable; see `pitchside filters`")
@@ -319,6 +323,82 @@ def attributes_missing(top: int = typer.Option(20, "--top", "-n"), comp: list[st
         ]:
             rows = [[e.name(p), p, n] for p, n in e.con.execute(sql, [top]).fetchall()]
             _show(Table(["name", "player_id", "balls"], rows, title=title))
+
+
+@app.command("sync")
+def sync_cmd(
+    comp: list[str] = typer.Option(None, "--comp", "-c", help="Competition key(s); default every 'ongoing' one"),
+    full: bool = typer.Option(False, "--full", help="Use each competition's full zip instead of the recent one"),
+    attributes: bool = typer.Option(True, help="Fetch batting hand / bowling style for new players"),
+) -> None:
+    """Pull new matches from Cricsheet, refresh everything derived, run quality checks."""
+    from pitchside.etl import sync as sync_mod
+
+    def log(msg: str) -> None:
+        typer.echo(f"{datetime.now():%Y-%m-%d %H:%M:%S} {msg}")
+
+    try:
+        results = sync_mod.sync(comp or None, full=full, fetch_attributes=attributes, log=log)
+    except KeyError as err:
+        typer.echo(f"error: {err.args[0]}", err=True)
+        raise typer.Exit(2)
+    for r in results:
+        if r.checks:
+            log(f"{r.competition}: {summarize(r.checks)}")
+            for c in r.checks:
+                if c.status != "ok":
+                    log(f"  {c.status} {c.name}: {c.detail}")
+    raise typer.Exit(1 if any(r.failed for r in results) else 0)
+
+
+@app.command()
+def check(tournaments: list[str] = typer.Argument(None, help="Competition key(s); default all loaded")) -> None:
+    """Data-quality checks: totals reconcile, targets, limits, ids, true-stat baselines, names, attributes."""
+    from pitchside.etl.sync import check_competition
+
+    keys = tournaments or [k for k, t in load_tournaments().items() if t.db_path.exists()]
+    failed = False
+    for k in keys:
+        checks = check_competition(get_tournament(k))
+        typer.echo(f"{k}: {summarize(checks)}")
+        for c in checks:
+            typer.echo(f"  {c.status:<4} {c.name:<20} {c.detail}")
+        failed |= any(c.status == "fail" for c in checks)
+    raise typer.Exit(1 if failed else 0)
+
+
+@schedule_app.command("install")
+def schedule_install(at: str = typer.Option("09:00", "--at", help="Daily time, HH:MM 24h")) -> None:
+    """Register a daily Windows Task Scheduler job running `pitchside sync`."""
+    from pitchside.etl import schedule
+
+    typer.echo(_schedule_call(schedule.install, at))
+
+
+@schedule_app.command("status")
+def schedule_status() -> None:
+    """Show the scheduled sync job: next run, last run and result."""
+    from pitchside.etl import schedule
+
+    typer.echo(_schedule_call(schedule.status))
+
+
+@schedule_app.command("remove")
+def schedule_remove() -> None:
+    """Delete the scheduled sync job."""
+    from pitchside.etl import schedule
+
+    typer.echo(_schedule_call(schedule.remove))
+
+
+def _schedule_call(fn, *args) -> str:
+    from pitchside.etl.schedule import ScheduleError
+
+    try:
+        return fn(*args)
+    except ScheduleError as err:
+        typer.echo(f"error: {err}", err=True)
+        raise typer.Exit(2)
 
 
 @cache_app.command("clear")

@@ -27,16 +27,18 @@ def is_error(result) -> bool:
     return bool(getattr(result, "is_error", getattr(result, "isError", False)))
 
 
-def test_server_registers_every_tool_read_only_except_export():
+def test_server_registers_every_tool_read_only_except_writers():
     async def go():
         async with Client(build_server()) as c:
             return (await c.list_tools()).tools, c
     listed, _ = asyncio.run(go())
     assert {t.name for t in listed} == set(TOOLS)
+    writers = {"export", "sync"}  # export writes a file; sync downloads and updates the databases
     for t in listed:
         ann = t.annotations
-        assert ann.read_only_hint is (t.name != "export"), t.name
+        assert ann.read_only_hint is (t.name not in writers), t.name
         assert ann.destructive_hint is False
+        assert ann.open_world_hint is (t.name == "sync"), t.name
 
 
 def test_query_is_read_only_and_capped(mini_tools):

@@ -44,6 +44,20 @@ Teams and grounds that appear under several names are unified in `aliases.toml`.
 
 Competitions are listed in `tournaments.toml`. Batting hand and bowling style (not in Cricsheet) live in `data/player_attributes.csv`: fetched from Wikipedia, hand-editable (set `source` to `manual` so a refetch never overwrites it, then `pitchside attributes reload`). `pitchside attributes missing` lists the gaps that matter most.
 
+## Keeping it current
+
+```bash
+uv run pitchside sync                    # new matches for every "ongoing" competition, then quality checks
+uv run pitchside check                   # data-quality checks on demand
+uv run pitchside schedule install --at 09:00   # daily Windows Task Scheduler job (per user, no admin)
+uv run pitchside schedule status
+uv run pitchside schedule remove
+```
+
+`sync` fetches Cricsheet's 30-day recently-added zip (or a competition's full zip if it hasn't synced for 25+ days), loads only matches from tracked competitions (idempotent; revised matches are replaced), rebuilds derived tables and true-stat baselines, refreshes the player register and fetches attributes for new players, then runs the quality checks. It exits non-zero if a check fails. The scheduled job appends to `data/logs/sync.log`, and runs late if the machine was off at the scheduled time. Competitions marked `status = "ended"` in `tournaments.toml` are never re-synced.
+
+Quality checks: innings totals vs deliveries, scorecard runs + extras vs totals, chase targets, wicket and ball limits, winners, registry ids, true-stat baselines zero-sum (all `fail`); plus `warn` for team/venue names not yet in `aliases.toml` and players missing batting hand or bowling style.
+
 ## Using it from an AI (MCP)
 
 `pitchside-mcp` is an MCP server on stdio. Calculation happens locally; the AI gets small finished tables back.
@@ -62,7 +76,7 @@ Competitions are listed in `tournaments.toml`. Batting hand and bowling style (n
 }
 ```
 
-Tools: `overview`, `grammar`, `describe_schema`, `find_player` / `find_team` / `find_venue` / `find_matches`; analysis: `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`; SQL: `query` (one read-only SELECT, rows capped) and `export` (full result to `data/exports/`, only the path comes back).
+Tools: `overview`, `grammar`, `describe_schema`, `find_player` / `find_team` / `find_venue` / `find_matches`; analysis: `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`; SQL: `query` (one read-only SELECT, rows capped) and `export` (full result to `data/exports/`, only the path comes back); data: `sync` (pull new matches on request).
 
 The SQL connection can't touch the filesystem or change settings, and each call opens and closes the databases, so `pitchside load` works while a client is connected.
 

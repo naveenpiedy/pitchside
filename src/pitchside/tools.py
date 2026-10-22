@@ -368,3 +368,22 @@ def export(sql: str, format: str = "csv", name: str | None = None, competitions:
     return "\n".join([
         "## Exported", f"path: {path}", f"rows: {table.num_rows}", f"bytes: {path.stat().st_size}",
         f"columns: {', '.join(table.column_names)}", "note: the data is on disk only; it was not sent back"])
+
+
+# --- data ---------------------------------------------------------------------
+
+def sync(full: bool = False, competitions: Competitions = None) -> str:
+    """Pull new matches from Cricsheet for ongoing competitions, then run quality checks."""
+    from pitchside.etl import sync as sync_mod
+
+    try:
+        results = sync_mod.sync(competitions or None, full=full, log=lambda _msg: None)
+    except KeyError as err:
+        raise ToolError(err.args[0]) from err
+    rows, notes = [], []
+    for r in results:
+        summary = f"{sum(c.status == 'fail' for c in r.checks)} fail, {sum(c.status == 'warn' for c in r.checks)} warn"
+        rows.append([r.competition, r.source, r.added, r.updated, r.data_version, r.error or summary])
+        notes += [f"{r.competition} {c.status} {c.name}: {c.detail}" for c in r.checks if c.status != "ok"]
+    return _render(Table(["competition", "source", "added", "updated", "data_version", "checks"], rows,
+                         title="Sync", notes=notes))

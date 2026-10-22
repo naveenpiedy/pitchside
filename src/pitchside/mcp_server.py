@@ -39,6 +39,7 @@ as noise.
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 WRITES_FILE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False)
+UPDATES_DATA = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True)
 
 # name: (function, description, annotations)
 TOOLS: dict[str, tuple[Callable, str, ToolAnnotations]] = {
@@ -88,6 +89,11 @@ TOOLS: dict[str, tuple[Callable, str, ToolAnnotations]] = {
     "export": (tools.export,
                "Run a SELECT and write the full result to a local CSV/Parquet file; returns only path, row count "
                "and columns. Use for bulk data you or the user will process elsewhere.", WRITES_FILE),
+    # data
+    "sync": (tools.sync,
+             "Download new matches from Cricsheet for ongoing competitions (e.g. last night's game), refresh "
+             "derived stats, and report data-quality checks. Only when asked or when data is clearly stale.",
+             UPDATES_DATA),
 }
 
 

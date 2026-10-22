@@ -41,3 +41,28 @@
 "Zayed Cricket Stadium, Abu Dhabi" = ["Sheikh Zayed Stadium"]
 # Kept apart on purpose: "Sardar Patel Stadium, Motera" (to 2015) and "Narendra Modi
 # Stadium, Ahmedabad" (from 2021) are the same site, but the ground was rebuilt.
+
+# Grounds seen under one name only. Listing them marks them as known, so
+# `pitchside check` only flags venue names it hasn't seen before (often a new
+# spelling of an existing ground that needs an alias above).
+"Barabati Stadium" = []
+"Barsapara Cricket Stadium, Guwahati" = []
+"Bharat Ratna Shri Atal Bihari Vajpayee Ekana Cricket Stadium, Lucknow" = []
+"Buffalo Park" = []
+"De Beers Diamond Oval" = []
+"Dubai International Cricket Stadium" = []
+"Green Park" = []
+"Holkar Cricket Stadium" = []
+"JSCA International Stadium Complex" = []
+"Kingsmead" = []
+"Narendra Modi Stadium, Ahmedabad" = []
+"Nehru Stadium" = []
+"New Wanderers Stadium" = []
+"Newlands" = []
+"OUTsurance Oval" = []
+"Sardar Patel Stadium, Motera" = []
+"Saurashtra Cricket Association Stadium" = []
+"Sharjah Cricket Stadium" = []
+"St George's Park" = []
+"SuperSport Park" = []
+"Vidarbha Cricket Association Stadium, Jamtha" = []
