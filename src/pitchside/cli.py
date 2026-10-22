@@ -29,6 +29,8 @@ schedule_app = typer.Typer(no_args_is_help=True, help="Daily sync via Windows Ta
 app.add_typer(attributes_app, name="attributes")
 app.add_typer(cache_app, name="cache")
 app.add_typer(schedule_app, name="schedule")
+scratch_app = typer.Typer(no_args_is_help=True, help="AI scratch tables.")
+app.add_typer(scratch_app, name="scratch")
 
 COMP_OPT = typer.Option(None, "--comp", "-c", help="Competition key(s); default all loaded")
 FILTER_OPT = typer.Option(None, "--filter", "-f", help="key=value, repeatable; see `pitchside filters`")
@@ -397,6 +399,26 @@ def _schedule_call(fn, *args) -> str:
     try:
         return fn(*args)
     except ScheduleError as err:
+        typer.echo(f"error: {err}", err=True)
+        raise typer.Exit(2)
+
+
+@scratch_app.command("list")
+def scratch_list() -> None:
+    """Scratch tables saved by AI clients (db/scratch.duckdb)."""
+    from pitchside import tools
+
+    typer.echo(tools.scratch_list())
+
+
+@scratch_app.command("drop")
+def scratch_drop(name: str) -> None:
+    """Delete one scratch table."""
+    from pitchside import tools
+
+    try:
+        typer.echo(tools.scratch_drop(name))
+    except tools.ToolError as err:
         typer.echo(f"error: {err}", err=True)
         raise typer.Exit(2)
 

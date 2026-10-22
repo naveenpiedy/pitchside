@@ -10,6 +10,7 @@ from __future__ import annotations
 import duckdb
 
 from pitchside.model.baselines import build_expectations
+from pitchside.model.shrinkage import build_priors
 
 SEASON_YEAR = """
 UPDATE matches AS m SET season_year = s.y
@@ -158,3 +159,4 @@ def refresh(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] = ()) -> 
     for sql in STEPS:
         con.execute(sql)
     build_expectations(con, rule_eras)
+    build_priors(con)

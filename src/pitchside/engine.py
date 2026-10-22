@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 import duckdb
 
+from pitchside import config
 from pitchside.config import REGISTRY_DB, Tournament, load_aliases, load_tournaments
 
 V_MATCHES = """
@@ -198,6 +199,14 @@ class Engine:
     team_names: dict[str, str] = field(default_factory=dict)   # name / old name / code -> franchise
     venue_names: dict[str, str] = field(default_factory=dict)  # name / old name -> canonical ground
 
+    priors: dict[tuple[str, str], float] = field(default_factory=dict)  # (role, component) -> k
+
+    def shrink_k(self, role: str, component: str) -> float:
+        """Shrinkage prior strength (balls) for a per-ball rate (model/shrinkage.py)."""
+        if (role, component) not in self.priors:
+            raise LookupError(f"No shrinkage prior for {role} {component}; run `pitchside rebuild <competition>`")
+        return self.priors[(role, component)]
+
     def resolve_team(self, query: str) -> str:
         """Canonical franchise for a team name, former name or code ('RCB', 'Kings XI')."""
         return _resolve_name("team", query, self.team_names)
@@ -289,13 +298,24 @@ SET lock_configuration = true;
 """
 
 
-def open_engine(competitions: list[str] | None = None, locked: bool = False) -> Engine:
+SCRATCH_CATALOG = """
+CREATE TABLE IF NOT EXISTS scratch._catalog (
+    name VARCHAR PRIMARY KEY, created_at TIMESTAMP, sql VARCHAR, versions VARCHAR, rows BIGINT, columns VARCHAR
+)
+"""
+
+
+def open_engine(competitions: list[str] | None = None, locked: bool = False,
+                scratch: str | None = None) -> Engine:
     """Open the engine over the given competition keys (default: all loaded).
 
     `locked` is for running SQL from outside (the MCP `query` tool): once the
     views exist, the connection can no longer touch the filesystem (no
     read_csv / COPY / ATTACH / extension installs) or change its settings.
     The databases already attached, read-only, stay readable.
+
+    `scratch` attaches the AI scratch database (config.SCRATCH_DB) as `scratch`:
+    'ro' read-only (if it exists), 'rw' writable (created if missing).
     """
     tournaments = load_tournaments()
     keys = competitions or [k for k, t in tournaments.items() if t.db_path.exists()]
@@ -360,7 +380,26 @@ def open_engine(competitions: list[str] | None = None, locked: bool = False) -> 
     venue_names = {n: c for n, c in con.execute(
         "SELECT venue_raw, any_value(venue) FROM v_matches GROUP BY 1").fetchall()}
     venue_names |= {c: c for c in venue_names.values()}
+    # Shrinkage priors: per competition, combined by number of player-seasons when several are open.
+    prior_parts = [f"SELECT * FROM {t.key}.shrink_priors" for t in selected
+                   if con.execute("SELECT count(*) FROM duckdb_tables() WHERE database_name = ? "
+                                  "AND table_name = 'shrink_priors'", [t.key]).fetchone()[0]]
+    priors = {}
+    if prior_parts:
+        priors = {(r, c): k for r, c, k in con.execute(
+            # weight >= 1 so a competition with no qualifying player-seasons still counts
+            "SELECT role, component, sum(k * greatest(n_units, 1)) / sum(greatest(n_units, 1)) FROM (" +
+            " UNION ALL ".join(prior_parts) +
+            ") GROUP BY ALL").fetchall()}
+
+    if scratch == "rw" or (scratch == "ro" and config.SCRATCH_DB.exists()):
+        config.SCRATCH_DB.parent.mkdir(parents=True, exist_ok=True)
+        mode = " (READ_ONLY)" if scratch == "ro" else ""
+        con.execute(f"ATTACH '{config.SCRATCH_DB.as_posix()}' AS scratch{mode}")
+        if scratch == "rw":
+            con.execute(SCRATCH_CATALOG)
+
     if locked:
         con.execute(LOCK_DOWN)
     return Engine(con=con, competitions=selected, data_versions=versions, names=names,
-                  team_names=team_names, venue_names=venue_names)
+                  team_names=team_names, venue_names=venue_names, priors=priors)

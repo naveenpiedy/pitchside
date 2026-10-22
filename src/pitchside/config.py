@@ -14,6 +14,7 @@ DB_DIR = ROOT / "db"
 REGISTRY_DB = DB_DIR / "registry.duckdb"
 CACHE_DB = DB_DIR / "cache.duckdb"
 EXPORT_DIR = DATA_DIR / "exports"
+SCRATCH_DB = DB_DIR / "scratch.duckdb"  # AI scratch tables (add-on A5)
 ATTRIBUTES_CSV = DATA_DIR / "player_attributes.csv"
 TOURNAMENTS_TOML = ROOT / "tournaments.toml"
 ALIASES_TOML = ROOT / "aliases.toml"

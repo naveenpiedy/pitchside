@@ -28,8 +28,10 @@ Workflow:
    team_profile, head_to_head, venue_profile, team_ranking, scorecard). Each takes `filters`, an object
    such as {"season": "2023+", "phase": "death", "bowl_type": "spin"}.
 4. For anything else, use query: one read-only SELECT over the v_* views (describe_schema shows them
-   and the values a column holds). Aggregate in SQL; rows are capped. For bulk data, use export, which
-   writes a file and returns only its path.
+   and the values a column holds). Aggregate in SQL; rows are capped. For multi-step work, save
+   intermediate results with scratch_save and query scratch.<name> later. For bulk data, use export,
+   which writes a file and returns only its path.
+5. Small samples: prefer the *_shrunk metrics (e.g. true_sr_shrunk) to rank players with uneven balls.
 
 True stats (true_*) compare each ball with what an average player in the same competition would produce
 in the same situation (over, season, wickets down, setting/chasing, rules era). Positive = better than
@@ -39,6 +41,7 @@ as noise.
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 WRITES_FILE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False)
+DELETES = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False)
 UPDATES_DATA = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True)
 
 # name: (function, description, annotations)
@@ -89,6 +92,14 @@ TOOLS: dict[str, tuple[Callable, str, ToolAnnotations]] = {
     "export": (tools.export,
                "Run a SELECT and write the full result to a local CSV/Parquet file; returns only path, row count "
                "and columns. Use for bulk data you or the user will process elsewhere.", WRITES_FILE),
+    # scratch space
+    "scratch_save": (tools.scratch_save,
+                     "Save one SELECT's result as scratch.<name> for multi-step analysis; it persists across calls "
+                     "and `query` can read and join it. Replaces a table of the same name. Returns a 5-row preview.",
+                     WRITES_FILE),
+    "scratch_list": (tools.scratch_list, "Saved scratch tables with size, source SQL, and whether they are stale.",
+                     READ_ONLY),
+    "scratch_drop": (tools.scratch_drop, "Delete a scratch table.", DELETES),
     # data
     "sync": (tools.sync,
              "Download new matches from Cricsheet for ongoing competitions (e.g. last night's game), refresh "

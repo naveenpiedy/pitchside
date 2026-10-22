@@ -157,6 +157,68 @@ def role_metrics(role: str) -> dict[str, tuple[str, bool]]:
     return ROLES[role][2]
 
 
+# --- Shrinkage (add-on A3) ------------------------------------------------------
+# Per-ball components: (numerator, denominator) sums. A shrunk rate is
+#     (numerator + k × population rate) / (denominator + k)
+# with k from the competition's `shrink_priors` and the population rate taken
+# under the same filters (without the player restriction). exp_* components are
+# the player's own context and are not shrunk.
+SHRINK_COMPONENTS: dict[str, dict[str, tuple[str, str]]] = {
+    "batting": {
+        "rpb": ("sum(runs)", "sum(faced)"),
+        "dpb": ("sum(out)", "sum(faced)"),
+        "dot": ("sum(dot)", "sum(faced)"),
+        "bnd": ("sum(fours) + sum(sixes)", "sum(faced)"),
+        "true_rpb": ("sum(runs) - sum(exp_runs)", "sum(faced)"),
+        "true_dpb": ("sum(out) - sum(exp_out)", "sum(faced)"),
+        "exp_rpb": ("sum(exp_runs)", "sum(faced)"),
+        "exp_dpb": ("sum(exp_out)", "sum(faced)"),
+    },
+    "bowling": {
+        "rpb": ("sum(runs)", "sum(balls)"),
+        "wpb": ("sum(wickets)", "sum(balls)"),
+        "dot": ("sum(dot)", "sum(balls)"),
+        "true_rpb": ("sum(exp_runs) - sum(runs)", "sum(balls)"),
+        "true_wpb": ("sum(wickets) - sum(exp_wkts)", "sum(balls)"),
+    },
+}
+UNSHRUNK_COMPONENTS = {"exp_rpb", "exp_dpb"}
+
+
+def _div(a, b):
+    return a / b if a is not None and b else None
+
+
+# name: (components, value from shrunk rates `r` and balls `n`, higher_is_better)
+SHRUNK_METRICS: dict[str, dict[str, tuple[list[str], object, bool]]] = {
+    "batting": {
+        "strike_rate_shrunk": (["rpb"], lambda r, n: 100 * r["rpb"], True),
+        "average_shrunk": (["rpb", "dpb"], lambda r, n: _div(r["rpb"], r["dpb"]), True),
+        "dot_pct_shrunk": (["dot"], lambda r, n: 100 * r["dot"], False),
+        "boundary_pct_shrunk": (["bnd"], lambda r, n: 100 * r["bnd"], True),
+        "true_sr_shrunk": (["true_rpb"], lambda r, n: 100 * r["true_rpb"], True),
+        "true_avg_shrunk": (["true_rpb", "true_dpb", "exp_rpb", "exp_dpb"],
+                            lambda r, n: _div(r["exp_rpb"] + r["true_rpb"], r["exp_dpb"] + r["true_dpb"])
+                            - _div(r["exp_rpb"], r["exp_dpb"]), True),
+    },
+    "bowling": {
+        "economy_shrunk": (["rpb"], lambda r, n: 6 * r["rpb"], False),
+        "average_shrunk": (["rpb", "wpb"], lambda r, n: _div(r["rpb"], r["wpb"]), False),
+        "strike_rate_shrunk": (["wpb"], lambda r, n: _div(1, r["wpb"]), False),
+        "dot_pct_shrunk": (["dot"], lambda r, n: 100 * r["dot"], True),
+        "true_economy_shrunk": (["true_rpb"], lambda r, n: 6 * r["true_rpb"], True),
+        "true_wickets_shrunk": (["true_wpb"], lambda r, n: r["true_wpb"] * n, True),
+    },
+}
+RATE_METRICS |= {m for role in SHRUNK_METRICS.values() for m in role if m != "true_wickets_shrunk"}
+
+
+def _shrunk_rate(num, den, k: float, mu):
+    if num is None or den is None or mu is None:
+        return None
+    return (num + k * mu) / (den + k) if den + k else None
+
+
 def aggregate(
     engine: Engine,
     role: str,
@@ -170,18 +232,20 @@ def aggregate(
     per: str | None = None,
     title: str = "",
 ) -> Table:
-    """Aggregate v_bat / v_bowl.
+    """Aggregate v_bat / v_bowl / v_team.
 
     by        dimensions to group on (see DIMENSIONS)
     players   restrict to these player ids
+    metrics   SQL metrics from the role's catalogue and/or *_shrunk metrics
     order_by  a metric to rank on (direction is the metric's "better" direction)
     per       with order_by + limit: top `limit` within each value of this dimension
     """
     catalogue = role_metrics(role)
+    shrunk_catalogue = SHRUNK_METRICS.get(role, {})
     metrics = list(metrics or DEFAULT_METRICS[role])
     for m in metrics + ([order_by] if order_by else []):
-        if m not in catalogue:
-            raise FilterError(f"Unknown {role} metric {m!r}; choose from {', '.join(catalogue)}")
+        if m not in catalogue and m not in shrunk_catalogue:
+            raise FilterError(f"Unknown {role} metric {m!r}; choose from {', '.join([*catalogue, *shrunk_catalogue])}")
     dims = list(by) + ([per] if per and per not in by else [])
     for d in dims:
         if d not in DIMENSIONS:
@@ -193,16 +257,34 @@ def aggregate(
     balls_sql = catalogue["balls"][0]
     where, params = compile_filters(filters, engine.resolve_player, engine.resolve_team)
     where = f"{side} AND {where}"
+
+    # Shrinkage: which components, their k, and the population rate under the same filters.
+    shrunk = [m for m in metrics if m in shrunk_catalogue]
+    rank_in_python = bool(order_by and order_by in shrunk_catalogue)
+    components = sorted({c for m in shrunk + ([order_by] if rank_in_python else []) for c in shrunk_catalogue[m][0]})
+    priors, population = {}, {}
+    if components:
+        try:
+            priors = {c: 0.0 if c in UNSHRUNK_COMPONENTS else engine.shrink_k(role, c) for c in components}
+        except LookupError as err:
+            raise FilterError(str(err)) from err
+        sums = ", ".join(f"{SHRINK_COMPONENTS[role][c][0]} AS n_{c}, {SHRINK_COMPONENTS[role][c][1]} AS d_{c}"
+                         for c in components)
+        pop = engine.con.execute(f"SELECT {sums} FROM {src} WHERE {where}", params).fetchone()
+        population = {c: _div(pop[2 * i], pop[2 * i + 1]) for i, c in enumerate(components)}
+
     if players:
         where += f" AND player_id IN ({', '.join('?' * len(players))})"
-        params += list(players)
+        params = params + list(players)
 
+    sql_metrics = [m for m in metrics if m in catalogue]
     select = [f"{DIMENSIONS[d]} AS {d}" for d in dims]
     if "player" in dims:
         select.append("arg_max(team_name, match_date) AS team")
-    select += [f"{catalogue[m][0]} AS {m}" for m in metrics]
-    if "balls" not in metrics:
-        select.append(f"{balls_sql} AS _balls")
+    select += [f"{catalogue[m][0]} AS {m}" for m in sql_metrics]
+    select.append(f"{balls_sql} AS _balls")
+    select += [f"{n} AS _n_{c}, {d} AS _d_{c}" for c, (n, d) in SHRINK_COMPONENTS.get(role, {}).items()
+               if c in components]
     sql = f"SELECT {', '.join(select)} FROM {src} WHERE {where}"
     if dims:
         sql += " GROUP BY " + ", ".join(DIMENSIONS[d] for d in dims)
@@ -210,7 +292,7 @@ def aggregate(
         sql += f" HAVING {balls_sql} >= ?"
         params.append(min_balls)
 
-    if order_by:
+    if order_by and not rank_in_python:
         direction = "DESC" if catalogue[order_by][1] else "ASC"
         rank = f"{catalogue[order_by][0]} {direction} NULLS LAST, {balls_sql} DESC"
         if per and limit:
@@ -222,7 +304,7 @@ def aggregate(
             if limit:
                 sql += " LIMIT ?"
                 params.append(limit)
-    elif dims:
+    elif dims and not rank_in_python:
         keys = [ORDERED[d] for d in dims if d in ORDERED]
         sql += " ORDER BY " + ", ".join(keys + [f"{balls_sql} DESC"])
         if limit:
@@ -230,30 +312,56 @@ def aggregate(
             params.append(limit)
 
     cur = engine.con.execute(sql, params)
-    columns = [c[0] for c in cur.description]
-    rows = [list(r) for r in cur.fetchall()]
+    fetched = [c[0] for c in cur.description]
+    records = [dict(zip(fetched, r)) for r in cur.fetchall()]
     if not dims:  # an ungrouped aggregate over nothing still yields one all-NULL row
-        rows = [r for r in rows if any(v not in (None, 0) for v in r)]
+        records = [r for r in records if r["_balls"]]
 
+    # Shrunk metrics, computed from the hidden component sums.
+    for r in records:
+        rates = {c: _shrunk_rate(r[f"_n_{c}"], r[f"_d_{c}"], priors[c], population[c]) for c in components}
+        for m in set(shrunk) | ({order_by} if rank_in_python else set()):
+            comps, fn, _ = shrunk_catalogue[m]
+            try:
+                value = fn({c: rates[c] for c in comps}, r["_balls"])
+            except TypeError:  # a missing rate
+                value = None
+            r[m] = round(value, 2) if value is not None else None
+
+    if rank_in_python:
+        better_high = shrunk_catalogue[order_by][2]
+        records.sort(key=lambda r: (r[order_by] is None,
+                                    -(r[order_by] or 0) if better_high else (r[order_by] or 0), -(r["_balls"] or 0)))
+        if per and limit:
+            seen: dict = {}
+            kept = []
+            for r in records:
+                seen[r[per]] = seen.get(r[per], 0) + 1
+                if seen[r[per]] <= limit:
+                    kept.append(r)
+            records = sorted(kept, key=lambda r: (r[per] is None, r[per]))
+        elif limit:
+            records = records[:limit]
+
+    columns = dims + (["team"] if "player" in dims else []) + metrics
+    rows = [[r.get(c) for c in columns] for r in records]
     for d in dims:
         if d in ID_DIMENSIONS:
             i = columns.index(d)
-            for r in rows:
-                r[i] = engine.name(r[i])
+            for row in rows:
+                row[i] = engine.name(row[i])
 
-    balls_col = columns.index("balls") if "balls" in columns else columns.index("_balls")
     notes = [] if rows else ["no data for these filters"]
-    if any(r[balls_col] is not None and r[balls_col] < SMALL_SAMPLE for r in rows):
+    balls = [r["_balls"] for r in records]
+    if any(b is not None and b < SMALL_SAMPLE for b in balls):
         columns.append("sample")
-        for r in rows:
-            b = r[balls_col] or 0
-            r.append("low" if b < LOW_SAMPLE else "small" if b < SMALL_SAMPLE else "")
+        for row, b in zip(rows, balls):
+            b = b or 0
+            row.append("low" if b < LOW_SAMPLE else "small" if b < SMALL_SAMPLE else "")
         notes.append(f"sample: low < {LOW_SAMPLE} balls, small < {SMALL_SAMPLE} balls")
-    if "_balls" in columns:
-        i = columns.index("_balls")
-        columns.pop(i)
-        for r in rows:
-            r.pop(i)
+    if shrunk:
+        notes.append("*_shrunk: pulled towards the average under the same filters by k balls of prior "
+                     f"({', '.join(f'{c} k={priors[c]:.0f}' for c in components if c not in UNSHRUNK_COMPONENTS)})")
     if any(d in ("bowl_type", "bowl_subtype", "bowling_arm", "batting_hand") for d in dims) or \
             any(k in (filters or {}) for k in ("bowl_type", "bowl_subtype", "bowling_arm", "batting_hand")):
         notes.append("bowling style / batting hand from player_attributes; 'unknown' = not classified")

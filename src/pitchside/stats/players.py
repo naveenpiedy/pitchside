@@ -20,7 +20,8 @@ PROFILE_SECTIONS = {
                 ("vs left / right-handers", ["batting_hand"]), ("setting / chasing", ["setting_chasing"])],
 }
 BOWLING_ONLY_METRICS = {"wickets", "economy", "wides", "noballs", "runs_saved", "exp_economy",
-                        "true_economy", "exp_wickets", "true_wickets"}
+                        "true_economy", "exp_wickets", "true_wickets",
+                        "economy_shrunk", "true_economy_shrunk", "true_wickets_shrunk"}
 TRUE_SECTIONS = [("true stats by season", ["season"]), ("true stats by phase", ["phase"])]
 MIN_ROLE_BALLS = 30  # below this, a role gets only its overall line
 
@@ -69,7 +70,8 @@ def leaderboard(engine: Engine, metric: str, role: str | None = None, filters: d
     """Top players by a metric. Rate metrics default to a 60-ball minimum."""
     role = role or ("bowling" if metric in BOWLING_ONLY_METRICS else "batting")
     if min_balls is None:
-        min_balls = 60 if metric in RATE_METRICS else 1
+        # Shrunk metrics already discount small samples, so they need a lower bar.
+        min_balls = 30 if metric.endswith("_shrunk") else 60 if metric in RATE_METRICS else 1
     title = f"Top {top} by {role} {metric}" + (f" per {per}" if per else "") + f" (min {min_balls} balls)"
 
     def compute() -> Table:

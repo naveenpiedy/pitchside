@@ -31,7 +31,8 @@ from pitchside.stats import players as pl
 from pitchside.stats import scorecard as sc
 from pitchside.stats import teams as tm
 from pitchside.stats.filters import FilterError, compile_filters, describe
-from pitchside.stats.splits import BATTING_METRICS, BOWLING_METRICS, DIMENSIONS, TEAM_BATTING_METRICS
+from pitchside.stats.splits import (BATTING_METRICS, BOWLING_METRICS, DIMENSIONS, SHRUNK_METRICS,
+                                    TEAM_BATTING_METRICS)
 from pitchside.stats.table import Table
 
 QUERY_LIMIT, QUERY_MAX_LIMIT = 50, 1000
@@ -52,9 +53,9 @@ class ToolError(ValueError):
 
 
 @contextmanager
-def _engine(competitions: Competitions = None, locked: bool = False):
+def _engine(competitions: list[str] | None = None, locked: bool = False, scratch: str | None = None):
     try:
-        with open_engine(competitions or None, locked=locked) as e:
+        with open_engine(competitions or None, locked=locked, scratch=scratch) as e:
             yield e
     except (FilterError, PlayerNotFound, NameNotFound) as err:
         raise ToolError(str(err)) from err
@@ -165,6 +166,10 @@ def grammar() -> str:
         "## dimensions (by / per): " + ", ".join(DIMENSIONS),
         "## batting metrics: " + ", ".join(BATTING_METRICS),
         "## bowling metrics: " + ", ".join(BOWLING_METRICS),
+        "## shrunk (small-sample-adjusted) metrics: batting " + ", ".join(SHRUNK_METRICS["batting"])
+        + "; bowling " + ", ".join(SHRUNK_METRICS["bowling"])
+        + ". Each is pulled towards the average under the same filters by k balls of prior evidence "
+        "(k estimated from the data per rate). Rank with these when samples are small or uneven.",
         "## team metrics (team_ranking): " + ", ".join(TEAM_BATTING_METRICS),
         "## true stats: true_* = actual vs an average player on the same balls (situation-, era-adjusted); "
         "positive is always better; exp_* is the expectation.",
@@ -326,9 +331,9 @@ def _run_with_timeout(con: duckdb.DuckDBPyConnection, sql: str, timeout_s: float
 
 
 def query(sql: str, limit: int = QUERY_LIMIT, competitions: Competitions = None) -> str:
-    """Run one read-only SELECT over the views/tables and return at most `limit` rows."""
+    """Run one read-only SELECT over the views/tables (and scratch.* tables) and return at most `limit` rows."""
     limit = max(1, min(int(limit), QUERY_MAX_LIMIT))
-    with _engine(competitions, locked=True) as e:
+    with _engine(competitions, locked=True, scratch="ro") as e:
         _check_select(e.con, sql)
         start = time.perf_counter()
         cur = _run_with_timeout(e.con, sql, QUERY_TIMEOUT_S)
@@ -387,3 +392,64 @@ def sync(full: bool = False, competitions: Competitions = None) -> str:
         notes += [f"{r.competition} {c.status} {c.name}: {c.detail}" for c in r.checks if c.status != "ok"]
     return _render(Table(["competition", "source", "added", "updated", "data_version", "checks"], rows,
                          title="Sync", notes=notes))
+
+
+# --- scratch space (add-on A5) ------------------------------------------------
+# Named tables the AI builds for multi-step analysis, kept in db/scratch.duckdb
+# across calls and readable from `query` as scratch.<name>. Each records the
+# data versions it was built from, so stale tables are flagged after a sync.
+
+SCRATCH_NAME = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
+SCRATCH_MAX_ROWS = 2_000_000
+
+
+def scratch_save(name: str, sql: str, competitions: Competitions = None) -> str:
+    """Save the result of one SELECT as scratch.<name> (replacing any table of that name)."""
+    if not SCRATCH_NAME.match(name):
+        raise ToolError("name: lowercase letters, digits and _, starting with a letter (max 41 chars)")
+    with _engine(competitions, locked=True, scratch="rw") as e:
+        _check_select(e.con, sql)
+        _run_with_timeout(e.con, f"CREATE OR REPLACE TABLE scratch.{name} AS {sql}", EXPORT_TIMEOUT_S)
+        rows = e.con.execute(f"SELECT count(*) FROM scratch.{name}").fetchone()[0]
+        if rows > SCRATCH_MAX_ROWS:
+            e.con.execute(f"DROP TABLE scratch.{name}")
+            raise ToolError(f"{rows} rows is over the scratch limit of {SCRATCH_MAX_ROWS}; aggregate first, "
+                            "or use export for bulk data")
+        cols = [f"{c[0]} {c[1]}" for c in e.con.execute(f"DESCRIBE scratch.{name}").fetchall()]
+        e.con.execute("INSERT OR REPLACE INTO scratch._catalog VALUES (?, ?, ?, ?, ?, ?)",
+                      [name, datetime.now(), sql, e.version_key, rows, ", ".join(cols)])
+        cur = e.con.execute(f"SELECT * FROM scratch.{name} LIMIT 5")
+        return _render(Table([c[0] for c in cur.description], [list(r) for r in cur.fetchall()],
+                             title=f"scratch.{name} (first 5 of {rows} rows)",
+                             notes=[f"saved; read it with query: SELECT ... FROM scratch.{name}"]))
+
+
+def scratch_list() -> str:
+    """Saved scratch tables, with their size, source SQL and whether new data has arrived since."""
+    if not config.SCRATCH_DB.exists():
+        return "(no scratch tables yet; create one with scratch_save)"
+    with _engine(scratch="ro") as e:
+        current = e.version_key
+        try:
+            rows = e.con.execute("SELECT name, rows, created_at, versions, sql FROM scratch._catalog "
+                                 "ORDER BY created_at DESC").fetchall()
+        except duckdb.Error:
+            rows = []
+        return _render(Table(["name", "rows", "created_at", "stale", "sql"],
+                             [[n, r, c, "yes" if v != current else "", s] for n, r, c, v, s in rows],
+                             title="Scratch tables",
+                             notes=["stale = built before the latest data load; re-run scratch_save to refresh"]))
+
+
+def scratch_drop(name: str) -> str:
+    """Delete scratch.<name>."""
+    if not SCRATCH_NAME.match(name):
+        raise ToolError("bad name")
+    with _engine(scratch="rw") as e:
+        exists = e.con.execute("SELECT count(*) FROM duckdb_tables() WHERE database_name = 'scratch' "
+                               "AND table_name = ?", [name]).fetchone()[0]
+        if not exists:
+            raise ToolError(f"No scratch table {name!r}")
+        e.con.execute(f"DROP TABLE scratch.{name}")
+        e.con.execute("DELETE FROM scratch._catalog WHERE name = ?", [name])
+        return f"dropped scratch.{name}"

@@ -11,6 +11,7 @@ from pitchside.mcp_server import TOOLS, build_server
 def mini_tools(mini_engine, monkeypatch, tmp_path, test_tournament):
     """Tool layer over the MINI_MATCH engine setup, with a temp export dir."""
     monkeypatch.setattr(config, "EXPORT_DIR", tmp_path / "exports")
+    monkeypatch.setattr(config, "SCRATCH_DB", tmp_path / "scratch.duckdb")
     monkeypatch.setattr(config, "load_tournaments", lambda: {"test": test_tournament})
     mini_engine.close()  # tools open their own engine per call
     return tools
@@ -33,11 +34,11 @@ def test_server_registers_every_tool_read_only_except_writers():
             return (await c.list_tools()).tools, c
     listed, _ = asyncio.run(go())
     assert {t.name for t in listed} == set(TOOLS)
-    writers = {"export", "sync"}  # export writes a file; sync downloads and updates the databases
+    writers = {"export", "sync", "scratch_save", "scratch_drop"}
     for t in listed:
         ann = t.annotations
         assert ann.read_only_hint is (t.name not in writers), t.name
-        assert ann.destructive_hint is False
+        assert ann.destructive_hint is (t.name == "scratch_drop"), t.name
         assert ann.open_world_hint is (t.name == "sync"), t.name
 
 
@@ -99,3 +100,30 @@ def test_errors_reach_the_client_as_tool_errors(mini_tools):
     assert is_error(r) and "Unknown filter" in r.content[0].text
     r = call("leaderboard", {"metric": "runs", "top": 2})
     assert not is_error(r) and r.content[0].text.startswith("## Top 2")
+
+
+def test_scratch_space_persists_across_calls(mini_tools, test_tournament):
+    assert "no scratch tables" in mini_tools.scratch_list()
+    out = mini_tools.scratch_save("bat_totals", "SELECT player_id, sum(runs) AS runs FROM v_bat GROUP BY 1")
+    assert out.startswith("## scratch.bat_totals (first 5 of")
+    # A separate call (new engine) can read and join it.
+    assert "a3|10" in mini_tools.query("SELECT player_id, runs FROM scratch.bat_totals WHERE player_id = 'a3'")
+    listed = mini_tools.scratch_list()
+    assert "bat_totals|" in listed and "|yes|" not in listed  # fresh
+
+    # New data makes it stale.
+    from pitchside.etl.load import connect, rebuild
+    con = connect(test_tournament.db_path)
+    try:
+        rebuild(con, test_tournament)
+    finally:
+        con.close()
+    assert "|yes|" in mini_tools.scratch_list()
+
+    for name, sql in [("Bad Name", "SELECT 1"), ("x", "DELETE FROM v_bat"),
+                      ("y", "SELECT * FROM read_csv('pyproject.toml')")]:
+        with pytest.raises(tools.ToolError):
+            mini_tools.scratch_save(name, sql)
+    assert mini_tools.scratch_drop("bat_totals") == "dropped scratch.bat_totals"
+    with pytest.raises(tools.ToolError):
+        mini_tools.scratch_drop("bat_totals")
