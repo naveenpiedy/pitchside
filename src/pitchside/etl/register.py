@@ -25,7 +25,8 @@ CREATE OR REPLACE TABLE player_attributes (
     bowling_style VARCHAR,   -- as published, e.g. 'Right arm offbreak'
     bowl_type     VARCHAR,   -- 'pace' / 'spin'
     bowl_subtype  VARCHAR,   -- e.g. 'RF', 'RFM', 'LFM', 'OB', 'LB', 'SLA', 'LWS'
-    source        VARCHAR
+    source        VARCHAR,   -- 'wikipedia' (refetchable) or anything else, e.g. 'manual' (never overwritten)
+    wiki_title    VARCHAR
 )
 """
 

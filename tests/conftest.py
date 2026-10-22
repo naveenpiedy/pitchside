@@ -74,3 +74,40 @@ def mini_match():
 def test_tournament(tmp_path):
     return Tournament(key="test", name="Test League", cricsheet="test", event="Test League",
                       format="T20", status="ongoing")
+
+
+ATTRIBUTES = """player_id,name,batting_hand,bowling_arm,bowling_style,bowl_type,bowl_subtype,source,wiki_title
+a1,A1,left,right,Right-arm offbreak,spin,OB,manual,
+b1,B1,right,right,Right-arm fast,pace,RF,manual,
+b2,B2,right,right,Right-arm offbreak,spin,OB,manual,
+"""
+
+
+@pytest.fixture
+def mini_engine(tmp_path, monkeypatch, mini_match, test_tournament):
+    """An Engine over a temp competition DB holding MINI_MATCH, with a temp registry and cache."""
+    import duckdb
+
+    from pitchside import config
+    from pitchside import engine as eng
+    from pitchside.etl.load import connect, load_matches
+    from pitchside.etl.register import load_attributes
+    from pitchside.stats import cache
+
+    monkeypatch.setattr(config, "DB_DIR", tmp_path)
+    monkeypatch.setattr(cache, "CACHE_DB", tmp_path / "cache.duckdb")
+    con = connect(test_tournament.db_path)
+    load_matches(con, test_tournament, [("1", mini_match, "1.json")], source="test")
+    con.close()
+
+    csv_path = tmp_path / "attributes.csv"
+    csv_path.write_text(ATTRIBUTES)
+    registry = tmp_path / "registry.duckdb"
+    reg = duckdb.connect(str(registry))
+    load_attributes(reg, csv_path)
+    reg.close()
+    monkeypatch.setattr(eng, "REGISTRY_DB", registry)
+    monkeypatch.setattr(eng, "load_tournaments", lambda: {"test": test_tournament})
+
+    with eng.open_engine() as e:
+        yield e

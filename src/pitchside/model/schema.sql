@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS innings (
     is_super_over  BOOLEAN NOT NULL,
     target_runs    INTEGER,
     target_overs   DOUBLE,
+    allocated_balls INTEGER NOT NULL,   -- legal balls available (reduced for rain / DLS / super over)
     runs           INTEGER NOT NULL,
     wickets        INTEGER NOT NULL,
     legal_balls    INTEGER NOT NULL,
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
     non_striker_id      VARCHAR NOT NULL,
     bowler_id           VARCHAR NOT NULL,
     batting_position    INTEGER NOT NULL,   -- striker's position in the order
+    non_striker_position INTEGER NOT NULL,
     runs_batter         INTEGER NOT NULL,
     runs_extras         INTEGER NOT NULL,
     runs_total          INTEGER NOT NULL,
@@ -83,6 +85,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
     is_wicket           BOOLEAN NOT NULL,   -- any dismissal on this ball (excludes retired hurt)
     is_bowler_wicket    BOOLEAN NOT NULL,   -- dismissal credited to the bowler
     is_batter_out       BOOLEAN NOT NULL,   -- the striker was the one dismissed
+    out_player_id       VARCHAR,            -- who was dismissed on this ball (either end), if anyone
     score_before        INTEGER NOT NULL,   -- team score before this ball
     wickets_before      INTEGER NOT NULL,
     batter_runs_before  INTEGER NOT NULL,   -- striker's own score before this ball

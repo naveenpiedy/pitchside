@@ -7,6 +7,7 @@ database never has to reconstruct innings state with window functions.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -40,15 +41,18 @@ class MatchRows:
         self.players.update(other.players)
 
 
-def phase_of(over_no: int, overs: int) -> str:
-    """Phase of a 0-based over for a match of `overs` overs per side."""
-    if overs == 20:
-        pp_end, death_start = 6, 16
-    elif overs == 50:
-        pp_end, death_start = 10, 40
-    else:  # other formats: scale the T20 split
-        pp_end, death_start = round(overs * 0.3), round(overs * 0.75)
-    if over_no < pp_end:
+def phase_of(over_no: int, overs: int, pp_end: int | None = None) -> str:
+    """Phase of a 0-based over in an innings of `overs` overs.
+
+    T20: powerplay 1-6, middle 7-15, death 16-20 (1-based). Shortened innings
+    keep the same proportions; `pp_end` (overs in the powerplay, as recorded
+    by Cricsheet) overrides the powerplay length when known.
+    """
+    if overs == 50:
+        default_pp, death_start = 10, 40
+    else:
+        default_pp, death_start = round(overs * 0.3), overs - round(overs / 4)
+    if over_no < (pp_end or default_pp):
         return "powerplay"
     if over_no < death_start:
         return "middle"
@@ -128,14 +132,30 @@ def parse_match(match_id: str, data: dict, competition: str, source_file: str | 
             )
             out.players[pid(name)] = name
 
+    # A match shortened before the start (rain, no DLS) gives both sides the chase's reduced overs.
+    reduced_overs = None
+    if not info.get("outcome", {}).get("method"):
+        for inn in data.get("innings", []):
+            t = (inn.get("target") or {}).get("overs")
+            if t is not None and not inn.get("super_over") and float(t) < overs:
+                reduced_overs = float(t)
+
     for innings_no, inn in enumerate(data.get("innings", []), start=1):
-        _parse_innings(out, match_id, innings_no, inn, teams, overs, bpo, pid)
+        _parse_innings(out, match_id, innings_no, inn, teams, overs, bpo, pid, reduced_overs)
 
     return out
 
 
+def powerplay_overs(inn: dict) -> int | None:
+    """Overs (rounded up) in the innings' mandatory powerplay, if Cricsheet records it."""
+    for pp in inn.get("powerplays", []):
+        if pp.get("type") == "mandatory" and pp.get("to") is not None:
+            return int(float(pp["to"])) + 1
+    return None
+
+
 def _parse_innings(out: MatchRows, match_id: str, innings_no: int, inn: dict,
-                   teams: list[str], overs: int, bpo: int, pid) -> None:
+                   teams: list[str], overs: int, bpo: int, pid, reduced_overs: float | None = None) -> None:
     batting_team = inn["team"]
     bowling_team = teams[1] if teams[0] == batting_team else teams[0]
     is_super_over = bool(inn.get("super_over"))
@@ -144,11 +164,16 @@ def _parse_innings(out: MatchRows, match_id: str, innings_no: int, inn: dict,
     target_overs = float(target["overs"]) if target.get("overs") is not None else None
 
     if is_super_over:
-        allocation = bpo
+        innings_overs = 1.0
     elif target_overs is not None:
-        allocation = overs_to_balls(target_overs, bpo)
+        innings_overs = target_overs
+    elif reduced_overs is not None:
+        innings_overs = reduced_overs
     else:
-        allocation = overs * bpo
+        innings_overs = float(overs)
+    allocation = overs_to_balls(innings_overs, bpo)
+    phase_overs = math.ceil(innings_overs)
+    pp_end = powerplay_overs(inn)
 
     score = wickets = legal = extras_total = seq = 0
     position: dict[str, int] = {}
@@ -187,9 +212,10 @@ def _parse_innings(out: MatchRows, match_id: str, innings_no: int, inn: dict,
                 "match_id": match_id, "innings_no": innings_no, "seq": seq,
                 "over_no": over_no, "ball_in_over": ball_in_over,
                 "is_legal": is_legal, "legal_balls_before": legal,
-                "phase": phase_of(over_no, overs),
+                "phase": phase_of(over_no, phase_overs, pp_end),
                 "batter_id": batter, "non_striker_id": non_striker, "bowler_id": bowler,
                 "batting_position": position[batter],
+                "non_striker_position": position[non_striker],
                 "runs_batter": runs["batter"], "runs_extras": runs["extras"], "runs_total": runs["total"],
                 "wides": wides, "noballs": noballs, "byes": byes, "legbyes": legbyes, "penalty": penalty,
                 "bowler_runs": runs["total"] - byes - legbyes - penalty,
@@ -199,6 +225,7 @@ def _parse_innings(out: MatchRows, match_id: str, innings_no: int, inn: dict,
                 "is_wicket": bool(counted),
                 "is_bowler_wicket": any(w["kind"] in BOWLER_WICKETS for w in counted),
                 "is_batter_out": any(pid(w["player_out"]) == batter for w in counted),
+                "out_player_id": pid(counted[0]["player_out"]) if counted else None,
                 "score_before": score, "wickets_before": wickets,
                 "batter_runs_before": bat_runs.get(batter, 0),
                 "batter_balls_before": bat_balls.get(batter, 0),
@@ -251,6 +278,7 @@ def _parse_innings(out: MatchRows, match_id: str, innings_no: int, inn: dict,
             "batting_team": batting_team, "bowling_team": bowling_team,
             "is_super_over": is_super_over,
             "target_runs": target_runs, "target_overs": target_overs,
+            "allocated_balls": allocation,
             "runs": score, "wickets": wickets, "legal_balls": legal, "extras": extras_total,
             "absent_hurt": [pid(p) for p in inn.get("absent_hurt", [])],
         }

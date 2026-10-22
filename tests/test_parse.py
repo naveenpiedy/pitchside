@@ -59,5 +59,22 @@ def test_innings_totals_targets_and_super_over(mini_match):
 def test_helpers():
     assert overs_to_balls(16.3, 6) == 99
     assert overs_to_balls(20, 6) == 120
-    assert [phase_of(o, 20) for o in (0, 5, 6, 15, 16, 19)] == [
+    # T20: powerplay 1-6, middle 7-15, death 16-20 (overs are 0-based here)
+    assert [phase_of(o, 20) for o in (0, 5, 6, 14, 15, 19)] == [
         "powerplay", "powerplay", "middle", "middle", "death", "death"]
+    # An 8-over game: 2-over powerplay as recorded, last 2 overs are the death
+    assert [phase_of(o, 8, pp_end=2) for o in range(8)] == ["powerplay"] * 2 + ["middle"] * 4 + ["death"] * 2
+
+
+def test_rain_shortened_match_reduces_both_innings(mini_match):
+    # MINI_MATCH's chase target is 5 overs with no DLS method: shortened before the start.
+    rows = parse_match("1", mini_match, "test")
+    inns = {i["innings_no"]: i for i in rows.innings}
+    assert inns[1]["allocated_balls"] == inns[2]["allocated_balls"] == 30
+    first = by_seq(rows.deliveries, innings_no=1)
+    assert first[1]["balls_remaining"] == 30 and first[8]["phase"] == "powerplay"
+
+    # The same target under DLS means the first innings was a full 20 overs.
+    mini_match["info"]["outcome"] = {"winner": "Blues", "by": {"wickets": 9}, "method": "D/L"}
+    rows = parse_match("1", mini_match, "test")
+    assert {i["innings_no"]: i["allocated_balls"] for i in rows.innings}[1] == 120

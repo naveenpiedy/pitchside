@@ -12,6 +12,7 @@ DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
 DB_DIR = ROOT / "db"
 REGISTRY_DB = DB_DIR / "registry.duckdb"
+CACHE_DB = DB_DIR / "cache.duckdb"
 ATTRIBUTES_CSV = DATA_DIR / "player_attributes.csv"
 TOURNAMENTS_TOML = ROOT / "tournaments.toml"
 
