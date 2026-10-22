@@ -105,6 +105,8 @@ uv run pitchside scorecard ipl 1426312 --partnerships
 
 ## Concepts
 
+The short version is below; [docs/METHODS.md](docs/METHODS.md) has every formula, what slice of data each piece is estimated on, and worked examples with real numbers.
+
 ### Filters, dimensions, metrics
 
 Every analysis takes the same filters, as `-f key=value` on the command line or a JSON object in AI tools:

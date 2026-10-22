@@ -42,6 +42,7 @@ On Windows, set `PYTHONIOENCODING=utf-8` when printing DuckDB tables (player nam
 - `src/pitchside/stats/teams.py` — team profile, head-to-head, venue profile, team ranking. Results tables only take match-level filters (`MATCH_FILTERS`); other filters are reported in the table notes, never silently dropped.
 - `src/pitchside/stats/players.py` — profile, splits, leaderboard, compare; each wrapped in `cache.cached`. Analyses return `Table` (`stats/table.py`) so the same functions back the CLI and the MCP tools.
 - `tournaments.toml` — tracked competitions; one DuckDB file per key (`db/<key>.duckdb`).
+- `docs/METHODS.md` — every formula with worked examples. Update it when a metric, baseline, prior or model changes.
 
 ## Conventions
 
