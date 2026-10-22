@@ -1,84 +1,166 @@
 # pitchside
 
-Local cricket analytics engine over [Cricsheet](https://cricsheet.org) ball-by-ball data, stored in DuckDB (one database per competition). Feature plan: true stats, splits, MCP access for AI clients, auto-sync.
+A local cricket analytics engine. It loads [Cricsheet](https://cricsheet.org) ball-by-ball data into DuckDB, one database per competition, and answers questions about it: splits, comparisons, leaderboards, team and venue profiles, **true stats** (performance against what an average player would have done on the same balls), small-sample-aware rankings, win probability and match impact.
 
-## Setup
+Everything is computed on your machine. An AI client (Claude, Cursor, anything that speaks MCP) can drive it through tools that return small, finished tables, so the model reasons over answers instead of raw data.
+
+The IPL (2008–2026, 1,243 matches) is loaded today; other T20 competitions are a config entry away.
+
+---
+
+## Quick start
+
+Requires [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 and the dependencies).
 
 ```bash
-uv sync
-uv run pitchside load ipl        # downloads the IPL zip on first run, builds db/ipl.duckdb
-uv run pitchside register        # Cricsheet people register -> db/registry.duckdb
-uv run pitchside info
-uv run pitchside scorecard ipl 1426312 --partnerships
-uv run pitchside attributes fetch  # batting hand / bowling style from Wikipedia -> data/player_attributes.csv
-uv run pytest
+uv sync                              # install
+uv run pitchside load ipl            # download Cricsheet's IPL zip, build db/ipl.duckdb (~5 s)
+uv run pitchside register            # player register (names, ids) -> db/registry.duckdb
+uv run pitchside attributes fetch    # batting hand / bowling style for every player (Wikipedia)
+uv run pitchside info                # what's loaded
 ```
 
-## Analysis
+Data and databases are not in the repository (`data/` and `db/` are gitignored); these commands rebuild them. On Windows, if player names print as garbled characters, set `PYTHONIOENCODING=utf-8`.
+
+`attributes fetch` classifies about 89% of players automatically. The rest, mostly recent uncapped players, need batting hand / bowling style typed into `data/player_attributes.csv` (see [Player attributes](#player-attributes)); `uv run pitchside attributes missing` lists them by how much they matter.
+
+---
+
+## A ten-minute tour
+
+Each command prints a small table. Names can be partial (`Kohli`), codes work for teams (`RCB`, `KXIP`), and `-f key=value` filters anything.
+
+**A player**
 
 ```bash
-uv run pitchside player Kohli -f season=2022+                          # profile
-uv run pitchside splits Kohli --by bowl_subtype,phase -f season=2023+  # any split, any filters
-uv run pitchside compare "SA Yadav" Klaasen Pooran -f bowl_type=spin
-uv run pitchside compare Bumrah Rashid -r bowling --by batting_hand
-uv run pitchside leaders economy -f phase=death -f season=2025
+uv run pitchside player "SA Yadav" -f season=2023+
+```
+
+Overall line, archetype, then splits by season, phase, pace vs spin, bowling subtype, position, entry point, setting vs chasing, and true stats by season and phase.
+
+**Any split, any filters**
+
+```bash
+uv run pitchside splits Kohli --by bowl_type,phase -f season=2024+
+uv run pitchside splits "SA Yadav" --by entry_bucket -f season=2023+
+uv run pitchside compare "SA Yadav" Klaasen Pooran -f bowl_type=spin -f season=2024+
+```
+
+**True stats**: actual, expected (an average player on the same balls), difference
+
+```bash
+uv run pitchside true Kohli --by season -f season=2022+
+uv run pitchside true Bumrah -r bowling --by phase -f season=2023+
+```
+
+**Leaderboards**: any metric, any filters; `*_shrunk` metrics handle small samples
+
+```bash
+uv run pitchside leaders true_sr -f season=2026 --min-balls 200
+uv run pitchside leaders true_sr_shrunk -f season=2026
+uv run pitchside leaders true_economy_shrunk -f phase=death -f season=2025+
 uv run pitchside leaders runs --per season -n 1
-uv run pitchside true Kohli --by season -f season=2023+                # true stats: actual, expected, difference
-uv run pitchside leaders true_sr -f season=2026 --min-balls 200        # any true metric ranks too
-uv run pitchside leaders true_economy -f phase=death --min-balls 120
-uv run pitchside baselines ipl -t bat_runs -p death                    # inspect the situation factors
-uv run pitchside team RCB -f season=2024+                              # team profile
-uv run pitchside h2h CSK MI                                            # head-to-head
-uv run pitchside venue Chinnaswamy -f season=2022+                     # venue profile
-uv run pitchside team-rank run_rate --side bowling -f phase=death      # teams ranked
-uv run pitchside filters        # the filter grammar, dimensions and metrics
-uv run pitchside find Sharma    # name lookup when a name is ambiguous
 ```
 
-Filters are `-f key=value` (lists `a,b`, ranges `2022-2025`, `2020+`), the same grammar the MCP tools will take.
-Results flag small samples (`low` < 30 balls, `small` < 120) and are cached until new data is loaded.
-
-**True stats** compare every ball with what an average player in the same competition would produce in the same situation: the over's level that season, adjusted for wickets down and setting/chasing, and for how many balls the striker has already faced, within each rules era (`rule_eras` in `tournaments.toml`, e.g. IPL 2023 for the Impact Player). Positive is always better than average, and league totals sum to zero. Batting: `true_sr`, `true_avg`, `true_runs`, `outs_saved`, `true_dot_pct`, `true_boundary_pct`. Bowling: `true_economy`, `runs_saved`, `true_wickets`, `true_avg`, `true_sr`, `true_dot_pct`, `true_boundary_pct`. Each comes with its `exp_*` counterpart. After changing `rule_eras`, run `pitchside rebuild <comp>`.
-
-**Win probability and impact**: two logistic models per competition (first innings and chase), fitted on its own history with the era's scoring rate as context, give each side's win probability before every ball. A ball's **WPA** (win probability added, in wins) is the change it causes; batters earn it on balls faced, bowlers the opposite on balls bowled. `wpa` / `wpa_per_match` work as metrics everywhere (leaders, splits, team-rank).
+**Who wins matches**: win probability added
 
 ```bash
-uv run pitchside mvp -f season=2026                 # most valuable players by WPA (batting + bowling)
-uv run pitchside mvp -f stage=playoffs -f season=2025
-uv run pitchside impact 1426312                     # one match: win % by over, who swung it, biggest balls
-uv run pitchside winprob ipl                        # model coefficients and calibration
+uv run pitchside mvp -f season=2026 -n 10
+uv run pitchside mvp -f season=2025 -f stage=playoffs -n 5
+uv run pitchside impact 1426312          # the 2024 final: win % by over, who swung it
 ```
 
-**Entry point**: when a batter walked in. Dimensions `entry_phase` (opener / powerplay / middle / death), `entry_bucket`, `entry_over`, `entry_wickets`, with filters to match: `pitchside splits "SA Yadav" --by entry_bucket`, `pitchside leaders true_sr_shrunk -f entry_phase=middle`. True stats account for how settled the batter is (balls 1-5 / 6-10 / 11+ at the crease), so late arrivals aren't judged against set batters' death-over scoring.
-
-**Archetypes**: rule-based labels with the features behind them. Batters: Powerplay enforcer, Anchor opener, Opener, Top-order aggressor/anchor/accumulator, Middle-overs aggressor, Middle-order anchor/accumulator, Finisher, Lower-order hitter/batter. Bowlers: New-ball seamer, Middle-overs seamer, Death specialist, All-phase seamer, Powerplay/Middle-overs/Death-overs spinner, tagged (economical)/(expensive). `pitchside archetypes -f season=2024+ --summary`, `pitchside archetypes -r bowling -a death`. Profiles show each player's archetype.
-
-**Small samples (`*_shrunk`)**: every rate has a shrunk version (`true_sr_shrunk`, `strike_rate_shrunk`, `average_shrunk`, `true_economy_shrunk`, `true_wickets_shrunk`, ...) that pulls a player towards the average under the same filters by *k* balls of prior evidence. *k* is estimated from the data for each per-ball rate (`shrink_priors`, rebuilt with the derived tables): about 160 balls for true runs per ball, but over 1,000 for wicket-taking, which is mostly noise in T20. Use them to rank players with uneven samples: `pitchside leaders true_sr_shrunk -f season=2026`.
-
-Teams and grounds that appear under several names are unified in `aliases.toml`. Renamed franchises count as one, under their current name (Delhi Daredevils seasons are Delhi Capitals), and short codes such as `RCB` or `KXIP` work anywhere a team is expected.
-
-Competitions are listed in `tournaments.toml`. Batting hand and bowling style (not in Cricsheet) live in `data/player_attributes.csv`: fetched from Wikipedia, hand-editable (set `source` to `manual` so a refetch never overwrites it, then `pitchside attributes reload`). `pitchside attributes missing` lists the gaps that matter most.
-
-## Keeping it current
+**Teams and grounds**
 
 ```bash
-uv run pitchside sync                    # new matches for every "ongoing" competition, then quality checks
-uv run pitchside check                   # data-quality checks on demand
-uv run pitchside schedule install --at 09:00   # daily Windows Task Scheduler job (per user, no admin)
-uv run pitchside schedule status
-uv run pitchside schedule remove
+uv run pitchside team RCB -f season=2024+
+uv run pitchside h2h CSK MI
+uv run pitchside venue Chepauk -f season=2023+
+uv run pitchside team-rank run_rate --side bowling -f phase=death -f season=2026
 ```
 
-`sync` fetches Cricsheet's 30-day recently-added zip (or a competition's full zip if it hasn't synced for 25+ days), loads only matches from tracked competitions (idempotent; revised matches are replaced), rebuilds derived tables and true-stat baselines, refreshes the player register and fetches attributes for new players, then runs the quality checks. It exits non-zero if a check fails. The scheduled job appends to `data/logs/sync.log`, and runs late if the machine was off at the scheduled time. Competitions marked `status = "ended"` in `tournaments.toml` are never re-synced.
+**Player types**
 
-Quality checks: innings totals vs deliveries, scorecard runs + extras vs totals, chase targets, wicket and ball limits, winners, registry ids, true-stat baselines zero-sum (all `fail`); plus `warn` for team/venue names not yet in `aliases.toml` and players missing batting hand or bowling style.
+```bash
+uv run pitchside archetypes -f season=2024+ --summary
+uv run pitchside archetypes -r bowling -a "death" -f season=2024+
+```
+
+**A scorecard**
+
+```bash
+uv run pitchside scorecard ipl 1426312 --partnerships
+```
+
+`uv run pitchside filters` lists every filter key, split dimension and metric.
+
+---
+
+## Concepts
+
+### Filters, dimensions, metrics
+
+Every analysis takes the same filters, as `-f key=value` on the command line or a JSON object in AI tools:
+
+| Kind | Keys |
+|---|---|
+| When | `season` (`2024`, `2022-2025`, `2020+`), `date`, `competition`, `stage` (league/playoffs) |
+| Where in the innings | `phase` (powerplay/middle/death), `over` (`16-20`), `innings` (setting/chasing), `wickets_down`, `nth_ball` (the batter's nth ball, e.g. `1-5`) |
+| Entry point | `entry_phase` (opener/powerplay/middle/death), `entry_over`, `entry_wickets` |
+| Who | `team`, `opposition` (names, old names or codes), `bowler`, `batter` (head-to-head), `position` |
+| Bowling / batting style | `bowl_type` (pace/spin), `bowl_subtype` (RF RFM RMF RM LF LFM LMF LM OB LB SLA LWS), `bowling_arm`, `batting_hand` |
+| Where | `venue`, `city` |
+
+Lists use commas (`bowl_subtype=OB,LB`). Splits group by dimensions (`--by season,phase`): the filter keys plus `ball_bucket`, `entry_bucket`, `order_group`, `player`, `bowler`, `batter`, `team_name`.
+
+Results flag small samples (`low` under 30 balls, `small` under 120) and are cached until new data arrives.
+
+### True stats
+
+Raw numbers mislead because of when players bat and bowl: a 150 strike rate is excellent in the middle overs and ordinary at the death. True stats compare every ball with what an average player in the same competition would produce in the same situation:
+
+- the competition's scoring level for that **over in that season** (so 2010 and 2026 are each judged against their own era),
+- adjusted for **wickets down** and **setting vs chasing**,
+- and for how **settled the batter is** (balls 1–5, 6–10, 11+ at the crease), so late arrivals aren't judged against set batters,
+- with the adjustments estimated separately per **rules era** (`rule_eras` in `tournaments.toml`; the IPL changes in 2023 with the Impact Player rule).
+
+Positive is always better than average, and every true stat sums to zero across the league. Each comes with its expectation (`exp_*`) so you can see both.
+
+| Batting | Bowling |
+|---|---|
+| `true_sr`, `true_avg`, `true_runs`, `outs_saved`, `true_dot_pct`, `true_boundary_pct` | `true_economy`, `runs_saved`, `true_wickets`, `true_avg`, `true_sr`, `true_dot_pct`, `true_boundary_pct` |
+
+`uv run pitchside baselines ipl -t bat_runs -p death` shows the adjustment factors.
+
+### Small samples (`*_shrunk`)
+
+A 30-ball hot streak shouldn't top a leaderboard. Every rate has a shrunk version that pulls a player towards the average (under the same filters) by *k* balls of prior evidence, with *k* estimated from the data for each rate: about 160 balls for true strike rate, but over 1,000 for wicket-taking, which is mostly noise in T20. Use them to rank players with uneven samples: `strike_rate_shrunk`, `average_shrunk`, `true_sr_shrunk`, `true_avg_shrunk`, `economy_shrunk`, `true_economy_shrunk`, `true_wickets_shrunk`, and more.
+
+### Win probability and WPA
+
+Two models per competition (first innings and chase), fitted on its own history, give each side's chance of winning before every ball. A ball's **WPA** (win probability added) is the change it causes, in wins: batters earn it on balls they face, bowlers the opposite on balls they bowl. `wpa` and `wpa_per_match` work as metrics everywhere; `mvp` and `impact` summarise them. True stats measure efficiency; WPA measures effect on results. `uv run pitchside winprob ipl` shows the model and how well calibrated it is.
+
+### Archetypes
+
+Rule-based labels, shown with the numbers behind them:
+
+- **Batters**: Powerplay enforcer, Anchor opener, Opener, Top-order aggressor / anchor / accumulator, Middle-overs aggressor, Middle-order anchor / accumulator, Finisher, Lower-order hitter / batter.
+- **Bowlers**: New-ball seamer, Middle-overs seamer, Death specialist, All-phase seamer, Powerplay / Middle-overs / Death-overs spinner, tagged *(economical)* or *(expensive)*.
+
+The thresholds are constants in `src/pitchside/stats/archetypes.py`.
+
+### Names
+
+Player names resolve by exact name, then a clear favourite by activity, then known aliases (`Rashid` → Rashid Khan, `Virat Kohli` → V Kohli); ambiguous names (`Pandya`) list the candidates, and `uv run pitchside find <name>` shows ids. Teams and grounds with several names are unified in `aliases.toml`: renamed franchises count as one under their current name (Delhi Daredevils seasons are Delhi Capitals), and codes like `RCB` or `KXIP` work anywhere a team is expected.
+
+---
 
 ## Using it from an AI (MCP)
 
-`pitchside-mcp` is an MCP server on stdio. Calculation happens locally; the AI gets small finished tables back.
+`pitchside-mcp` is an MCP server (stdio). The AI calls tools; the engine computes locally and returns compact tables.
 
-- **Claude Code**: `.mcp.json` in this folder registers it automatically (approve it when prompted).
-- **Claude Desktop / other clients**: add to the client's MCP config:
+- **Claude Code**: `.mcp.json` in this folder registers it; approve it when prompted.
+- **Claude Desktop / other clients**: add to the client's MCP config, with this folder's path:
 
 ```json
 {
@@ -91,14 +173,114 @@ Quality checks: innings totals vs deliveries, scorecard runs + extras vs totals,
 }
 ```
 
-Tools: `overview`, `grammar`, `describe_schema`, `find_player` / `find_team` / `find_venue` / `find_matches`; analysis: `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`; SQL: `query` (one read-only SELECT, rows capped) and `export` (full result to `data/exports/`, only the path comes back); impact: `mvp`, `match_impact`; archetypes: `archetypes`; data: `sync` (pull new matches on request); scratch: `scratch_save` / `scratch_list` / `scratch_drop` (named tables in `db/scratch.duckdb` that persist across calls, readable from `query` as `scratch.<name>`, flagged stale after new data; also `pitchside scratch list|drop`).
+**Things to ask it**
 
-The SQL connection can't touch the filesystem or change settings, and each call opens and closes the databases, so `pitchside load` works while a client is connected.
+- *Who were the best death bowlers in IPL 2025, adjusted for situation and sample size?*
+- *Compare Suryakumar Yadav and Heinrich Klaasen against spin since 2023.*
+- *Which batters do best when walking in during overs 7–10?*
+- *How did the 2024 IPL final swing, and who won it for KKR?*
+- *What's the par first-innings score at the Chinnaswamy recently, and do teams chase there?*
+- *Is Kohli an anchor? Show his true strike rate by phase over the last three seasons.*
 
-## Layout
+**Tools**
 
-- `src/pitchside/etl/` — download, parse (one pass per match, derives ball state), load (idempotent, revision-aware), register, attributes (Wikipedia batting hand / bowling style)
-- `src/pitchside/model/` — `schema.sql` core tables; `derive.py` precomputed scorecard and season tables
-- `src/pitchside/tools.py` — the AI-facing tool functions (compact text in, compact text out); `mcp_server.py` registers them as MCP tools
-- `src/pitchside/engine.py` — in-memory DuckDB over all competition DBs + registry; views `v_balls`, `v_bat`, `v_bowl`; player name resolution
-- `src/pitchside/stats/` — `filters.py` (filter grammar), `splits.py` (aggregation engine), `players.py` (profile, splits, leaderboard, compare), `teams.py` (team, head-to-head, venue, team ranking), `cache.py`, `table.py`, `scorecard.py`
+| Group | Tools |
+|---|---|
+| Discovery | `overview`, `grammar`, `describe_schema`, `find_player`, `find_team`, `find_venue`, `find_matches` |
+| Players | `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `archetypes` |
+| Teams and matches | `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`, `mvp`, `match_impact` |
+| SQL | `query` (one read-only SELECT, 50 rows by default), `export` (full result to `data/exports/`, only the path comes back) |
+| Scratch | `scratch_save`, `scratch_list`, `scratch_drop`: named tables that persist across calls, readable from `query` as `scratch.<name>` |
+| Data | `sync`: pull new matches |
+
+The SQL tools can't touch the filesystem or change anything; each call opens and closes the databases, so loads and syncs can run while a client is connected.
+
+---
+
+## Keeping it current
+
+```bash
+uv run pitchside sync                          # new matches for "ongoing" competitions, then quality checks
+uv run pitchside check                         # data-quality checks on demand
+uv run pitchside schedule install --at 09:00   # daily sync via Windows Task Scheduler (no admin)
+uv run pitchside schedule status
+uv run pitchside schedule remove
+```
+
+`sync` downloads Cricsheet's recently-added matches (or a competition's full archive if it hasn't synced for 25+ days), loads only matches from tracked competitions (re-running is harmless; corrected matches are replaced), rebuilds everything derived, fetches attributes for new players and runs the quality checks. The scheduled job logs to `data/logs/sync.log` and runs late if the PC was off. Competitions marked `status = "ended"` are never re-synced.
+
+Quality checks fail if totals don't reconcile (innings vs deliveries, scorecards vs totals), chase targets are wrong, limits are broken or true-stat baselines aren't zero-sum; they warn about umpire-miscounted overs, new team or venue names (add them to `aliases.toml`) and players missing attributes.
+
+---
+
+## Adding a competition
+
+Add an entry to `tournaments.toml`, using the competition's download name from [cricsheet.org/downloads](https://cricsheet.org/downloads):
+
+```toml
+[bbl]
+name = "Big Bash League"
+cricsheet = "bbl_male"          # downloads/bbl_male_json.zip
+event = "Big Bash League"       # info.event.name in the match files
+format = "T20"
+status = "ongoing"              # or "ended"
+rule_eras = [2021]              # optional: seasons where playing conditions changed
+```
+
+Then `uv run pitchside load bbl`, `uv run pitchside attributes fetch`, and check `uv run pitchside check bbl` for new names. Each competition gets its own database and its own baselines; tools work across all loaded competitions unless you pass `-c bbl`.
+
+---
+
+## Player attributes
+
+Cricsheet doesn't record batting hand or bowling style. `attributes fetch` gets them from Wikipedia (via each player's Cricinfo id and Wikidata) into `data/player_attributes.csv`. To fill a gap or correct a row, edit the CSV, set `source` to `manual` (a later fetch never overwrites manual rows), then:
+
+```bash
+uv run pitchside attributes reload
+uv run pitchside attributes missing
+```
+
+The CSV is local only (gitignored); keep a copy if you've filled rows by hand.
+
+---
+
+## Command reference
+
+| Command | What it does |
+|---|---|
+| `load <comp>` / `register` / `attributes fetch\|reload\|missing` | Build the data |
+| `info`, `find <name>`, `filters` | What's loaded, name lookup, filter/metric reference |
+| `player`, `splits`, `true`, `compare`, `leaders`, `archetypes` | Player analysis |
+| `team`, `h2h`, `venue`, `team-rank` | Team and ground analysis |
+| `mvp`, `impact <match_id>`, `scorecard <comp> <match_id>` | Impact and matches |
+| `sync`, `check`, `schedule install\|status\|remove` | Keeping data current |
+| `rebuild <comp>`, `baselines <comp>`, `winprob <comp>` | Models: recompute and inspect |
+| `mcp`, `scratch list\|drop`, `cache clear` | AI server and housekeeping |
+
+Every command has `--help`.
+
+---
+
+## Limitations
+
+- **T20 only** for now; ODI support needs its own baselines.
+- **No ball-tracking data**: Cricsheet has no line, length or speed, so true stats know the situation but not the quality of each delivery.
+- **Wicket-taking is noisy**: shrunk true wickets show little separation between bowlers in a season, which is a property of T20 data, not a bug.
+- **WPA credits batters and bowlers only**: fielding isn't credited, and a run-out is charged to the striker on that ball.
+- **Bowling style is one label per career**: players who changed style (seam to spin) aren't modelled.
+- **Washouts without a ball bowled** aren't in Cricsheet, so a few seasons have fewer matches than scheduled.
+
+---
+
+## Development
+
+```bash
+uv run pytest                       # unit tests + IPL integration tests (skipped if IPL isn't loaded)
+```
+
+- `src/pitchside/etl/` — download, parse, load, sync, quality checks, attributes, schedule
+- `src/pitchside/model/` — schema, derived tables, true-stat baselines, shrinkage priors, win probability
+- `src/pitchside/engine.py` — query engine over every loaded competition
+- `src/pitchside/stats/` — filters, splits/aggregation, players, teams, archetypes, impact, scorecards
+- `src/pitchside/tools.py`, `mcp_server.py` — AI tools and the MCP server
+- `AGENTS.md` — conventions and invariants for anyone (or any AI) changing the code
