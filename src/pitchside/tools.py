@@ -487,3 +487,14 @@ def match_impact(match_id: str, top: int = 5, competitions: Competitions = None)
             return _render(impact.match_impact(e, str(match_id), min(top, 20)))
         except LookupError as err:
             raise ToolError(f"{err}; use find_matches") from err
+
+
+# --- pre-match brief (add-on A6) ------------------------------------------------
+
+def prematch_brief(team_a: str, team_b: str, venue: str | None = None, filters: Filters = None,
+                   competitions: Competitions = None) -> str:
+    """Everything before Team A v Team B: head to head, form, venue, phase profiles, key players, matchups."""
+    from pitchside.stats.brief import prematch_brief as brief
+
+    with _engine(competitions) as e:
+        return _render(brief(e, team_a, team_b, venue, filters))

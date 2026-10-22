@@ -89,6 +89,11 @@ TOOLS: dict[str, tuple[Callable, str, ToolAnnotations]] = {
                    "Player archetypes (e.g. Powerplay enforcer, Anchor opener, Middle-overs aggressor, Finisher; "
                    "Death specialist, New-ball seamer, Middle-overs spinner) with the features behind each label. "
                    "summary=true for counts per archetype; archetype='finisher' to filter.", READ_ONLY),
+    "prematch_brief": (tools.prematch_brief,
+                       "One-call brief before Team A v Team B (optionally at a venue): head to head, recent form, "
+                       "venue par and chase record, phase profiles vs league, key players, each side's batters v "
+                       "the other's pace/spin mix, and batter-v-bowler head to heads. Recent = last 3 seasons "
+                       "unless filters.season is given.", READ_ONLY),
     "mvp": (tools.mvp,
             "Most valuable players by win probability added (WPA, in wins): batting + bowling impact on the "
             "result, under any filters (e.g. a season, a team, playoffs).", READ_ONLY),

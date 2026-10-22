@@ -70,6 +70,13 @@ uv run pitchside mvp -f season=2025 -f stage=playoffs -n 5
 uv run pitchside impact 1426312          # the 2024 final: win % by over, who swung it
 ```
 
+**Before a match**: one brief with head to head, form, venue, phase profiles, key players and matchups
+
+```bash
+uv run pitchside brief CSK MI --venue Wankhede
+uv run pitchside brief RCB PBKS --venue Ahmedabad -f season=2025+
+```
+
 **Teams and grounds**
 
 ```bash
@@ -177,6 +184,7 @@ Player names resolve by exact name, then a clear favourite by activity, then kno
 
 - *Who were the best death bowlers in IPL 2025, adjusted for situation and sample size?*
 - *Compare Suryakumar Yadav and Heinrich Klaasen against spin since 2023.*
+- *Brief me on CSK v MI at the Wankhede: who are the key players and matchups?*
 - *Which batters do best when walking in during overs 7–10?*
 - *How did the 2024 IPL final swing, and who won it for KKR?*
 - *What's the par first-innings score at the Chinnaswamy recently, and do teams chase there?*
@@ -188,7 +196,7 @@ Player names resolve by exact name, then a clear favourite by activity, then kno
 |---|---|
 | Discovery | `overview`, `grammar`, `describe_schema`, `find_player`, `find_team`, `find_venue`, `find_matches` |
 | Players | `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `archetypes` |
-| Teams and matches | `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`, `mvp`, `match_impact` |
+| Teams and matches | `prematch_brief`, `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`, `mvp`, `match_impact` |
 | SQL | `query` (one read-only SELECT, 50 rows by default), `export` (full result to `data/exports/`, only the path comes back) |
 | Scratch | `scratch_save`, `scratch_list`, `scratch_drop`: named tables that persist across calls, readable from `query` as `scratch.<name>` |
 | Data | `sync`: pull new matches |
@@ -251,7 +259,7 @@ The CSV is local only (gitignored); keep a copy if you've filled rows by hand.
 | `load <comp>` / `register` / `attributes fetch\|reload\|missing` | Build the data |
 | `info`, `find <name>`, `filters` | What's loaded, name lookup, filter/metric reference |
 | `player`, `splits`, `true`, `compare`, `leaders`, `archetypes` | Player analysis |
-| `team`, `h2h`, `venue`, `team-rank` | Team and ground analysis |
+| `brief`, `team`, `h2h`, `venue`, `team-rank` | Pre-match brief, team and ground analysis |
 | `mvp`, `impact <match_id>`, `scorecard <comp> <match_id>` | Impact and matches |
 | `sync`, `check`, `schedule install\|status\|remove` | Keeping data current |
 | `rebuild <comp>`, `baselines <comp>`, `winprob <comp>` | Models: recompute and inspect |

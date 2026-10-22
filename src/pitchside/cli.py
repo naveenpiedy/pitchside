@@ -214,6 +214,21 @@ def archetypes_cmd(
         _show(ar.archetype_summary(e, role, f, min_balls) if summary else ar.archetypes(e, role, f, min_balls, archetype))
 
 
+@app.command("brief")
+def brief_cmd(
+    team_a: str,
+    team_b: str,
+    venue: str = typer.Option(None, "--venue", "-v", help="Ground (name or part of it)"),
+    comp: list[str] = COMP_OPT,
+    filter: list[str] = FILTER_OPT,
+) -> None:
+    """Pre-match brief, e.g. `brief CSK MI --venue Wankhede`. Recent = last 3 seasons unless -f season=..."""
+    from pitchside.stats.brief import prematch_brief
+
+    with _engine(comp) as e:
+        _show(prematch_brief(e, team_a, team_b, venue, parse_cli_filters(filter)))
+
+
 @app.command("mvp")
 def mvp_cmd(
     top: int = typer.Option(15, "--top", "-n"),
