@@ -273,6 +273,14 @@ def team_rank(
         _show(tm.team_ranking(e, metric, side, parse_cli_filters(filter), per, top))
 
 
+@app.command()
+def mcp() -> None:
+    """Run the MCP server on stdio (same as `pitchside-mcp`)."""
+    from pitchside.mcp_server import main
+
+    main()
+
+
 @attributes_app.command("fetch")
 def attributes_fetch(refresh: bool = typer.Option(False, help="Re-fetch rows previously taken from Wikipedia")) -> None:
     """Fetch batting hand / bowling style from Wikipedia for every loaded player."""

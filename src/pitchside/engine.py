@@ -281,8 +281,22 @@ class Engine:
         raise PlayerNotFound(query, cands)
 
 
-def open_engine(competitions: list[str] | None = None) -> Engine:
-    """Open the engine over the given competition keys (default: all loaded)."""
+LOCK_DOWN = """
+SET autoinstall_known_extensions = false;
+SET autoload_known_extensions = false;
+SET enable_external_access = false;
+SET lock_configuration = true;
+"""
+
+
+def open_engine(competitions: list[str] | None = None, locked: bool = False) -> Engine:
+    """Open the engine over the given competition keys (default: all loaded).
+
+    `locked` is for running SQL from outside (the MCP `query` tool): once the
+    views exist, the connection can no longer touch the filesystem (no
+    read_csv / COPY / ATTACH / extension installs) or change its settings.
+    The databases already attached, read-only, stay readable.
+    """
     tournaments = load_tournaments()
     keys = competitions or [k for k, t in tournaments.items() if t.db_path.exists()]
     selected = []
@@ -346,5 +360,7 @@ def open_engine(competitions: list[str] | None = None) -> Engine:
     venue_names = {n: c for n, c in con.execute(
         "SELECT venue_raw, any_value(venue) FROM v_matches GROUP BY 1").fetchall()}
     venue_names |= {c: c for c in venue_names.values()}
+    if locked:
+        con.execute(LOCK_DOWN)
     return Engine(con=con, competitions=selected, data_versions=versions, names=names,
                   team_names=team_names, venue_names=venue_names)

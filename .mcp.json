@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pitchside": {
+      "command": "uv",
+      "args": ["run", "--no-sync", "pitchside-mcp"]
+    }
+  }
+}

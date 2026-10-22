@@ -44,9 +44,32 @@ Teams and grounds that appear under several names are unified in `aliases.toml`.
 
 Competitions are listed in `tournaments.toml`. Batting hand and bowling style (not in Cricsheet) live in `data/player_attributes.csv`: fetched from Wikipedia, hand-editable (set `source` to `manual` so a refetch never overwrites it, then `pitchside attributes reload`). `pitchside attributes missing` lists the gaps that matter most.
 
+## Using it from an AI (MCP)
+
+`pitchside-mcp` is an MCP server on stdio. Calculation happens locally; the AI gets small finished tables back.
+
+- **Claude Code**: `.mcp.json` in this folder registers it automatically (approve it when prompted).
+- **Claude Desktop / other clients**: add to the client's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "pitchside": {
+      "command": "uv",
+      "args": ["--directory", "C:/Users/Snorlax/PycharmProjects/cricket_analysis", "run", "pitchside-mcp"]
+    }
+  }
+}
+```
+
+Tools: `overview`, `grammar`, `describe_schema`, `find_player` / `find_team` / `find_venue` / `find_matches`; analysis: `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`; SQL: `query` (one read-only SELECT, rows capped) and `export` (full result to `data/exports/`, only the path comes back).
+
+The SQL connection can't touch the filesystem or change settings, and each call opens and closes the databases, so `pitchside load` works while a client is connected.
+
 ## Layout
 
 - `src/pitchside/etl/` — download, parse (one pass per match, derives ball state), load (idempotent, revision-aware), register, attributes (Wikipedia batting hand / bowling style)
 - `src/pitchside/model/` — `schema.sql` core tables; `derive.py` precomputed scorecard and season tables
+- `src/pitchside/tools.py` — the AI-facing tool functions (compact text in, compact text out); `mcp_server.py` registers them as MCP tools
 - `src/pitchside/engine.py` — in-memory DuckDB over all competition DBs + registry; views `v_balls`, `v_bat`, `v_bowl`; player name resolution
 - `src/pitchside/stats/` — `filters.py` (filter grammar), `splits.py` (aggregation engine), `players.py` (profile, splits, leaderboard, compare), `teams.py` (team, head-to-head, venue, team ranking), `cache.py`, `table.py`, `scorecard.py`

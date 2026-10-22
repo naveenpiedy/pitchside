@@ -44,6 +44,21 @@ class Table:
         return "\n".join(out)
 
 
+    def render_compact(self, max_rows: int | None = None, max_cell: int = 80) -> str:
+        """Pipe-separated, no padding: the token-cheap form sent to AI clients."""
+        rows = self.rows[:max_rows] if max_rows else self.rows
+        out = [f"## {self.title}"] if self.title else []
+        out.append("|".join(self.columns))
+        for r in rows:
+            out.append("|".join(_fmt(v)[:max_cell].replace("|", "/").replace("\n", " ") for v in r))
+        if not self.rows:
+            out.append("(no rows)")
+        if max_rows and len(self.rows) > max_rows:
+            out.append(f"... {len(self.rows) - max_rows} more rows")
+        out += [f"note: {n}" for n in self.notes]
+        return "\n".join(out)
+
+
 def _fmt(v) -> str:
     if v is None:
         return "-"
