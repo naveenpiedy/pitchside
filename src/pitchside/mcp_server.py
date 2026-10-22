@@ -32,6 +32,8 @@ Workflow:
    intermediate results with scratch_save and query scratch.<name> later. For bulk data, use export,
    which writes a file and returns only its path.
 5. Small samples: prefer the *_shrunk metrics (e.g. true_sr_shrunk) to rank players with uneven balls.
+6. Match-winning impact: wpa (win probability added, in wins) is a metric everywhere; mvp and match_impact
+   summarise it. true_* measure efficiency vs an average player; wpa measures effect on results.
 
 True stats (true_*) compare each ball with what an average player in the same competition would produce
 in the same situation (over, season, wickets down, setting/chasing, rules era). Positive = better than
@@ -87,6 +89,12 @@ TOOLS: dict[str, tuple[Callable, str, ToolAnnotations]] = {
                    "Player archetypes (e.g. Powerplay enforcer, Anchor opener, Middle-overs aggressor, Finisher; "
                    "Death specialist, New-ball seamer, Middle-overs spinner) with the features behind each label. "
                    "summary=true for counts per archetype; archetype='finisher' to filter.", READ_ONLY),
+    "mvp": (tools.mvp,
+            "Most valuable players by win probability added (WPA, in wins): batting + bowling impact on the "
+            "result, under any filters (e.g. a season, a team, playoffs).", READ_ONLY),
+    "match_impact": (tools.match_impact,
+                     "One match: win probability over by over, the players who swung it most, and the biggest "
+                     "single-ball swings.", READ_ONLY),
     "scorecard": (tools.scorecard, "Match scorecard; optionally partnerships and over-by-over.", READ_ONLY),
     # SQL
     "query": (tools.query,

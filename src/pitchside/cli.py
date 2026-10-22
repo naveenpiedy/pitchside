@@ -214,6 +214,49 @@ def archetypes_cmd(
         _show(ar.archetype_summary(e, role, f, min_balls) if summary else ar.archetypes(e, role, f, min_balls, archetype))
 
 
+@app.command("mvp")
+def mvp_cmd(
+    top: int = typer.Option(15, "--top", "-n"),
+    min_matches: int = typer.Option(1, "--min-matches"),
+    comp: list[str] = COMP_OPT,
+    filter: list[str] = FILTER_OPT,
+) -> None:
+    """Most valuable players by win probability added, e.g. `mvp -f season=2026`."""
+    from pitchside.stats import impact
+
+    with _engine(comp) as e:
+        _show(impact.mvp(e, parse_cli_filters(filter), top, min_matches))
+
+
+@app.command("impact")
+def impact_cmd(match_id: str, top: int = typer.Option(5, "--top", "-n"), comp: list[str] = COMP_OPT) -> None:
+    """Win probability path, top contributors and biggest swings for one match."""
+    from pitchside.stats import impact
+
+    with _engine(comp) as e:
+        try:
+            _show(impact.match_impact(e, match_id, top))
+        except LookupError as err:
+            typer.echo(f"error: {err}", err=True)
+            raise typer.Exit(2)
+
+
+@app.command("winprob")
+def winprob_cmd(tournament: str) -> None:
+    """Win-probability model: coefficients, fit and calibration (predicted vs actual by decile)."""
+    con = connect(get_tournament(tournament).db_path, read_only=True)
+    try:
+        for title, sql in [
+            ("Model", "SELECT innings, feature, round(coef, 4) AS coef, n, round(log_loss, 4) AS log_loss, "
+                      "round(brier, 4) AS brier FROM winprob_model"),
+            ("Calibration", "SELECT * FROM winprob_calibration"),
+        ]:
+            cur = con.execute(sql)
+            _show(Table([c[0] for c in cur.description], [list(r) for r in cur.fetchall()], title=title))
+    finally:
+        con.close()
+
+
 @app.command("true")
 def true_cmd(
     name: str,

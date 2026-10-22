@@ -466,3 +466,24 @@ def archetypes(role: Role = "batting", filters: Filters = None, archetype: str |
         if summary:
             return _render(ar.archetype_summary(e, role, filters, min_balls))
         return _render(ar.archetypes(e, role, filters, min_balls, archetype))
+
+
+# --- win probability / impact (add-on A1) ---------------------------------------
+
+def mvp(filters: Filters = None, top: int = 15, min_matches: int = 1, competitions: Competitions = None) -> str:
+    """Players by total win probability added (batting + bowling)."""
+    from pitchside.stats import impact
+
+    with _engine(competitions) as e:
+        return _render(impact.mvp(e, filters, min(top, 100), min_matches))
+
+
+def match_impact(match_id: str, top: int = 5, competitions: Competitions = None) -> str:
+    """One match: win probability by over, biggest contributors, biggest swings."""
+    from pitchside.stats import impact
+
+    with _engine(competitions) as e:
+        try:
+            return _render(impact.match_impact(e, str(match_id), min(top, 20)))
+        except LookupError as err:
+            raise ToolError(f"{err}; use find_matches") from err

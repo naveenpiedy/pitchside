@@ -40,6 +40,15 @@ Results flag small samples (`low` < 30 balls, `small` < 120) and are cached unti
 
 **True stats** compare every ball with what an average player in the same competition would produce in the same situation: the over's level that season, adjusted for wickets down and setting/chasing, and for how many balls the striker has already faced, within each rules era (`rule_eras` in `tournaments.toml`, e.g. IPL 2023 for the Impact Player). Positive is always better than average, and league totals sum to zero. Batting: `true_sr`, `true_avg`, `true_runs`, `outs_saved`, `true_dot_pct`, `true_boundary_pct`. Bowling: `true_economy`, `runs_saved`, `true_wickets`, `true_avg`, `true_sr`, `true_dot_pct`, `true_boundary_pct`. Each comes with its `exp_*` counterpart. After changing `rule_eras`, run `pitchside rebuild <comp>`.
 
+**Win probability and impact**: two logistic models per competition (first innings and chase), fitted on its own history with the era's scoring rate as context, give each side's win probability before every ball. A ball's **WPA** (win probability added, in wins) is the change it causes; batters earn it on balls faced, bowlers the opposite on balls bowled. `wpa` / `wpa_per_match` work as metrics everywhere (leaders, splits, team-rank).
+
+```bash
+uv run pitchside mvp -f season=2026                 # most valuable players by WPA (batting + bowling)
+uv run pitchside mvp -f stage=playoffs -f season=2025
+uv run pitchside impact 1426312                     # one match: win % by over, who swung it, biggest balls
+uv run pitchside winprob ipl                        # model coefficients and calibration
+```
+
 **Entry point**: when a batter walked in. Dimensions `entry_phase` (opener / powerplay / middle / death), `entry_bucket`, `entry_over`, `entry_wickets`, with filters to match: `pitchside splits "SA Yadav" --by entry_bucket`, `pitchside leaders true_sr_shrunk -f entry_phase=middle`. True stats account for how settled the batter is (balls 1-5 / 6-10 / 11+ at the crease), so late arrivals aren't judged against set batters' death-over scoring.
 
 **Archetypes**: rule-based labels with the features behind them. Batters: Powerplay enforcer, Anchor opener, Opener, Top-order aggressor/anchor/accumulator, Middle-overs aggressor, Middle-order anchor/accumulator, Finisher, Lower-order hitter/batter. Bowlers: New-ball seamer, Middle-overs seamer, Death specialist, All-phase seamer, Powerplay/Middle-overs/Death-overs spinner, tagged (economical)/(expensive). `pitchside archetypes -f season=2024+ --summary`, `pitchside archetypes -r bowling -a death`. Profiles show each player's archetype.
@@ -82,7 +91,7 @@ Quality checks: innings totals vs deliveries, scorecard runs + extras vs totals,
 }
 ```
 
-Tools: `overview`, `grammar`, `describe_schema`, `find_player` / `find_team` / `find_venue` / `find_matches`; analysis: `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`; SQL: `query` (one read-only SELECT, rows capped) and `export` (full result to `data/exports/`, only the path comes back); data: `sync` (pull new matches on request); scratch: `scratch_save` / `scratch_list` / `scratch_drop` (named tables in `db/scratch.duckdb` that persist across calls, readable from `query` as `scratch.<name>`, flagged stale after new data; also `pitchside scratch list|drop`).
+Tools: `overview`, `grammar`, `describe_schema`, `find_player` / `find_team` / `find_venue` / `find_matches`; analysis: `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`; SQL: `query` (one read-only SELECT, rows capped) and `export` (full result to `data/exports/`, only the path comes back); impact: `mvp`, `match_impact`; archetypes: `archetypes`; data: `sync` (pull new matches on request); scratch: `scratch_save` / `scratch_list` / `scratch_drop` (named tables in `db/scratch.duckdb` that persist across calls, readable from `query` as `scratch.<name>`, flagged stale after new data; also `pitchside scratch list|drop`).
 
 The SQL connection can't touch the filesystem or change settings, and each call opens and closes the databases, so `pitchside load` works while a client is connected.
 

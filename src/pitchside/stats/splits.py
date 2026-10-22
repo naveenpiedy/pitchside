@@ -78,6 +78,9 @@ BATTING_METRICS: dict[str, tuple[str, bool]] = {  # name: (sql, higher_is_better
     "outs_saved": ("round(sum(exp_out) - sum(out), 1)", True),
     "true_dot_pct": ("round(100.0 * (sum(exp_dot) - sum(dot)) / nullif(sum(faced), 0), 1)", True),
     "true_boundary_pct": ("round(100.0 * (sum(fours) + sum(sixes) - sum(exp_bnd)) / nullif(sum(faced), 0), 1)", True),
+    # Win probability added (A1), in wins: the change in the batting side's win chance on balls faced.
+    "wpa": ("round(sum(wpa), 2)", True),
+    "wpa_per_match": ("round(sum(wpa) / nullif(count(DISTINCT match_id), 0), 3)", True),
 }
 BOWLING_METRICS: dict[str, tuple[str, bool]] = {
     "innings": ("count(DISTINCT match_id || ':' || innings_no)", True),
@@ -106,6 +109,9 @@ BOWLING_METRICS: dict[str, tuple[str, bool]] = {
     "true_sr": ("round(sum(balls) / nullif(sum(exp_wkts), 0) - sum(balls) / nullif(sum(wickets), 0), 1)", True),
     "true_dot_pct": ("round(100.0 * (sum(dot) - sum(exp_dot)) / nullif(sum(balls), 0), 1)", True),
     "true_boundary_pct": ("round(100.0 * (sum(exp_bnd) - sum(fours) - sum(sixes)) / nullif(sum(balls), 0), 1)", True),
+    # Win probability added (A1), in wins, from the bowling side's point of view.
+    "wpa": ("round(sum(wpa), 2)", True),
+    "wpa_per_match": ("round(sum(wpa) / nullif(count(DISTINCT match_id), 0), 3)", True),
 }
 # Team-level facts (v_team): runs include extras, wickets are all dismissals.
 # The same numbers are good for the batting side and bad for the bowling side.
@@ -122,11 +128,13 @@ _TEAM_SQL = {
     "extras": "sum(extras)",
     "fours": "sum(fours)",
     "sixes": "sum(sixes)",
+    "wpa": "round(sum(wpa), 2)",
 }
 _BATTING_SIDE_GOOD = {"innings", "runs", "balls", "run_rate", "average", "balls_per_wicket",
-                      "boundary_pct", "extras", "fours", "sixes"}
+                      "boundary_pct", "extras", "fours", "sixes", "wpa"}
 TEAM_BATTING_METRICS = {m: (sql, m in _BATTING_SIDE_GOOD) for m, sql in _TEAM_SQL.items()}
-TEAM_BOWLING_METRICS = {m: (sql, m not in _BATTING_SIDE_GOOD or m in ("innings", "balls"))
+# wpa is already signed from each side's point of view, so higher is better for both.
+TEAM_BOWLING_METRICS = {m: (sql, m not in _BATTING_SIDE_GOOD or m in ("innings", "balls", "wpa"))
                         for m, sql in _TEAM_SQL.items()}
 
 DEFAULT_METRICS = {

@@ -13,7 +13,7 @@ from __future__ import annotations
 from pitchside.engine import Engine
 from pitchside.stats import cache
 from pitchside.stats.filters import compile_filters
-from pitchside.stats.splits import aggregate
+from pitchside.stats.splits import DEFAULT_METRICS, aggregate
 from pitchside.stats.table import Table
 
 MATCH_FILTERS = {"season", "competition", "team", "opposition", "venue", "city", "stage", "date", "match", "innings"}
@@ -190,5 +190,6 @@ def team_ranking(engine: Engine, metric: str = "run_rate", side: str = "batting"
         "team_ranking", {"metric": metric, "side": side, "filters": filters or {}, "per": per, "top": top},
         engine.version_key,
         lambda: aggregate(engine, role, filters, by=["team"], order_by=metric, per=per,
+                          metrics=DEFAULT_METRICS[role] + ([metric] if metric not in DEFAULT_METRICS[role] else []),
                           limit=top or (None if not per else 1), title=title),
     )
