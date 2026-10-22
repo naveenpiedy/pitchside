@@ -1,0 +1,12 @@
+# Competitions tracked by the engine. One DuckDB file per key: db/<key>.duckdb
+#   cricsheet : download name on https://cricsheet.org/downloads/ (<name>_json.zip)
+#   event     : info.event.name in the match files, used to pick matches out of
+#               the shared recently-added zips during sync
+#   status    : "ongoing" (synced) or "ended" (frozen)
+
+[ipl]
+name = "Indian Premier League"
+cricsheet = "ipl_male"
+event = "Indian Premier League"
+format = "T20"
+status = "ongoing"

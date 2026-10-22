@@ -1,0 +1,18 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.idea/
+.vscode/
+
+# Data: downloads, CSVs and databases are local only (rebuild with `pitchside load`)
+data/
+*.csv
+*.zip
+*.part
+
+# DuckDB
+db/
+*.duckdb
+*.duckdb.wal
