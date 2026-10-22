@@ -23,6 +23,10 @@ uv run pitchside compare "SA Yadav" Klaasen Pooran -f bowl_type=spin
 uv run pitchside compare Bumrah Rashid -r bowling --by batting_hand
 uv run pitchside leaders economy -f phase=death -f season=2025
 uv run pitchside leaders runs --per season -n 1
+uv run pitchside true Kohli --by season -f season=2023+                # true stats: actual, expected, difference
+uv run pitchside leaders true_sr -f season=2026 --min-balls 200        # any true metric ranks too
+uv run pitchside leaders true_economy -f phase=death --min-balls 120
+uv run pitchside baselines ipl -t bat_runs -p death                    # inspect the situation factors
 uv run pitchside team RCB -f season=2024+                              # team profile
 uv run pitchside h2h CSK MI                                            # head-to-head
 uv run pitchside venue Chinnaswamy -f season=2022+                     # venue profile
@@ -33,6 +37,8 @@ uv run pitchside find Sharma    # name lookup when a name is ambiguous
 
 Filters are `-f key=value` (lists `a,b`, ranges `2022-2025`, `2020+`), the same grammar the MCP tools will take.
 Results flag small samples (`low` < 30 balls, `small` < 120) and are cached until new data is loaded.
+
+**True stats** compare every ball with what an average player in the same competition would produce in the same situation: the over's level that season, adjusted for wickets down and setting/chasing within each rules era (`rule_eras` in `tournaments.toml`, e.g. IPL 2023 for the Impact Player). Positive is always better than average, and league totals sum to zero. Batting: `true_sr`, `true_avg`, `true_runs`, `outs_saved`, `true_dot_pct`, `true_boundary_pct`. Bowling: `true_economy`, `runs_saved`, `true_wickets`, `true_avg`, `true_sr`, `true_dot_pct`, `true_boundary_pct`. Each comes with its `exp_*` counterpart. After changing `rule_eras`, run `pitchside rebuild <comp>`.
 
 Teams and grounds that appear under several names are unified in `aliases.toml`. Renamed franchises count as one, under their current name (Delhi Daredevils seasons are Delhi Capitals), and short codes such as `RCB` or `KXIP` work anywhere a team is expected.
 

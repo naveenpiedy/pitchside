@@ -3,8 +3,9 @@
 Each loaded competition is ATTACHed read-only next to the registry, and temp
 views stitch them together, so every analysis is written once against:
 
-- v_balls : every non-super-over delivery, with match context and attributes
-            of the batter (hand) and bowler (type, subtype, arm)
+- v_balls : every non-super-over delivery, with match context, attributes
+            of the batter (hand) and bowler (type, subtype, arm), and the
+            per-ball expectations behind true stats (model/baselines.py)
 - v_bat   : batting facts, one row per ball faced plus one row per non-striker
             dismissal, keyed by `player_id` = the batter
 - v_bowl  : bowling facts, one row per delivery, keyed by `player_id` = the bowler
@@ -57,10 +58,13 @@ CREATE OR REPLACE TEMP VIEW v_balls AS
 SELECT d.*, m.competition, m.season_year, m.match_date, m.venue, m.city, m.stage_group AS stage,
        i.batting_team, i.bowling_team, i.batting_franchise, i.bowling_franchise,
        bat.batting_hand AS batter_hand, ns.batting_hand AS non_striker_hand,
-       coalesce(bwl.bowl_type, 'unknown') AS bowl_type, bwl.bowl_subtype, bwl.bowling_arm
+       coalesce(bwl.bowl_type, 'unknown') AS bowl_type, bwl.bowl_subtype, bwl.bowling_arm,
+       e.exp_bat_runs, e.exp_bat_out, e.exp_bat_dot, e.exp_bat_bnd,
+       e.exp_bowl_runs, e.exp_bowl_wkt, e.exp_bowl_dot, e.exp_bowl_bnd
 FROM v_deliveries_raw d
 JOIN v_matches m USING (match_id)
 JOIN v_innings i USING (match_id, innings_no)
+LEFT JOIN v_expected_raw e USING (match_id, innings_no, seq)
 LEFT JOIN reg.player_attributes bat ON bat.player_id = d.batter_id
 LEFT JOIN reg.player_attributes ns  ON ns.player_id  = d.non_striker_id
 LEFT JOIN reg.player_attributes bwl ON bwl.player_id = d.bowler_id
@@ -81,13 +85,14 @@ SELECT batter_id AS player_id, {CONTEXT_COLS},
        runs_batter AS runs, is_ball_faced::INT AS faced,
        (is_ball_faced AND runs_batter = 0)::INT AS dot,
        is_four::INT AS fours, is_six::INT AS sixes,
-       coalesce(out_player_id = batter_id, false)::INT AS out
+       coalesce(out_player_id = batter_id, false)::INT AS out,
+       exp_bat_runs AS exp_runs, exp_bat_out AS exp_out, exp_bat_dot AS exp_dot, exp_bat_bnd AS exp_bnd
 FROM v_balls
 UNION ALL
 SELECT non_striker_id, {CONTEXT_COLS},
        batting_franchise, bowling_franchise, batting_team, bowling_team,
        non_striker_position, non_striker_hand,
-       NULL, 0, 0, 0, 0, 0, 1
+       NULL, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
 FROM v_balls WHERE out_player_id = non_striker_id
 """
 
@@ -102,7 +107,8 @@ SELECT bowler_id AS player_id, {CONTEXT_COLS},
        is_bowler_wicket::INT AS wickets,
        (is_legal AND bowler_runs = 0)::INT AS dot,
        is_four::INT AS fours, is_six::INT AS sixes,
-       (wides > 0)::INT AS wides, (noballs > 0)::INT AS noballs
+       (wides > 0)::INT AS wides, (noballs > 0)::INT AS noballs,
+       exp_bowl_runs AS exp_runs, exp_bowl_wkt AS exp_wkts, exp_bowl_dot AS exp_dot, exp_bowl_bnd AS exp_bnd
 FROM v_balls
 """
 
@@ -316,7 +322,12 @@ def open_engine(competitions: list[str] | None = None) -> Engine:
     def union(table: str) -> str:
         return " UNION ALL BY NAME ".join(f"SELECT * FROM {t.key}.{table}" for t in selected)
 
-    for table in ("matches", "innings", "deliveries"):
+    for t in selected:
+        has = con.execute("SELECT count(*) FROM duckdb_tables() WHERE database_name = ? AND table_name = 'expected'",
+                          [t.key]).fetchone()[0]
+        if not has:
+            raise FileNotFoundError(f"Competition {t.key!r} has no true-stat baselines; run `pitchside rebuild {t.key}`")
+    for table in ("matches", "innings", "deliveries", "expected"):
         con.execute(f"CREATE OR REPLACE TEMP VIEW v_{table}_raw AS {union(table)}")
     con.execute("CREATE OR REPLACE TEMP VIEW v_players AS SELECT player_id, any_value(name) AS name "
                 f"FROM ({union('players')}) GROUP BY player_id")

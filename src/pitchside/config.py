@@ -28,6 +28,7 @@ class Tournament:
     event: str
     format: str
     status: str
+    rule_eras: tuple[int, ...] = ()
 
     @property
     def zip_url(self) -> str:
@@ -45,7 +46,8 @@ class Tournament:
 def load_tournaments(path: Path = TOURNAMENTS_TOML) -> dict[str, Tournament]:
     with open(path, "rb") as f:
         raw = tomllib.load(f)
-    return {key: Tournament(key=key, **cfg) for key, cfg in raw.items()}
+    return {key: Tournament(key=key, **{**cfg, "rule_eras": tuple(cfg.get("rule_eras", ()))})
+            for key, cfg in raw.items()}
 
 
 def get_tournament(key: str) -> Tournament:

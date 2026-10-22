@@ -58,6 +58,18 @@ BATTING_METRICS: dict[str, tuple[str, bool]] = {  # name: (sql, higher_is_better
     "balls_per_boundary": ("round(sum(faced) / nullif(sum(fours) + sum(sixes), 0), 1)", False),
     "fours": ("sum(fours)", True),
     "sixes": ("sum(sixes)", True),
+    # True stats: actual vs what an average batter would have produced on the same balls
+    # (model/baselines.py). Positive true_* is always better than average.
+    "exp_runs": ("round(sum(exp_runs), 1)", True),
+    "true_runs": ("round(sum(runs) - sum(exp_runs), 1)", True),
+    "exp_sr": ("round(100.0 * sum(exp_runs) / nullif(sum(faced), 0), 2)", True),
+    "true_sr": ("round(100.0 * (sum(runs) - sum(exp_runs)) / nullif(sum(faced), 0), 2)", True),
+    "exp_avg": ("round(sum(exp_runs) / nullif(sum(exp_out), 0), 2)", True),
+    "true_avg": ("round(sum(runs) / nullif(sum(out), 0) - sum(exp_runs) / nullif(sum(exp_out), 0), 2)", True),
+    "exp_outs": ("round(sum(exp_out), 1)", False),
+    "outs_saved": ("round(sum(exp_out) - sum(out), 1)", True),
+    "true_dot_pct": ("round(100.0 * (sum(exp_dot) - sum(dot)) / nullif(sum(faced), 0), 1)", True),
+    "true_boundary_pct": ("round(100.0 * (sum(fours) + sum(sixes) - sum(exp_bnd)) / nullif(sum(faced), 0), 1)", True),
 }
 BOWLING_METRICS: dict[str, tuple[str, bool]] = {
     "innings": ("count(DISTINCT match_id || ':' || innings_no)", True),
@@ -73,6 +85,19 @@ BOWLING_METRICS: dict[str, tuple[str, bool]] = {
     "sixes": ("sum(sixes)", False),
     "wides": ("sum(wides)", False),
     "noballs": ("sum(noballs)", False),
+    # True stats from the bowler's side: positive = better than an average bowler on the same balls.
+    "exp_runs": ("round(sum(exp_runs), 1)", False),
+    "runs_saved": ("round(sum(exp_runs) - sum(runs), 1)", True),
+    "exp_economy": ("round(6.0 * sum(exp_runs) / nullif(sum(balls), 0), 2)", False),
+    "true_economy": ("round(6.0 * (sum(exp_runs) - sum(runs)) / nullif(sum(balls), 0), 2)", True),
+    "exp_wickets": ("round(sum(exp_wkts), 1)", True),
+    "true_wickets": ("round(sum(wickets) - sum(exp_wkts), 1)", True),
+    "exp_avg": ("round(sum(exp_runs) / nullif(sum(exp_wkts), 0), 2)", False),
+    "true_avg": ("round(sum(exp_runs) / nullif(sum(exp_wkts), 0) - sum(runs) / nullif(sum(wickets), 0), 2)", True),
+    "exp_sr": ("round(sum(balls) / nullif(sum(exp_wkts), 0), 1)", False),
+    "true_sr": ("round(sum(balls) / nullif(sum(exp_wkts), 0) - sum(balls) / nullif(sum(wickets), 0), 1)", True),
+    "true_dot_pct": ("round(100.0 * (sum(dot) - sum(exp_dot)) / nullif(sum(balls), 0), 1)", True),
+    "true_boundary_pct": ("round(100.0 * (sum(exp_bnd) - sum(fours) - sum(sixes)) / nullif(sum(balls), 0), 1)", True),
 }
 # Team-level facts (v_team): runs include extras, wickets are all dismissals.
 # The same numbers are good for the batting side and bad for the bowling side.
@@ -103,7 +128,15 @@ DEFAULT_METRICS = {
     "team_bowling": ["innings", "runs", "balls", "wickets", "run_rate", "average", "dot_pct", "boundary_pct"],
 }
 RATE_METRICS = {"average", "strike_rate", "dot_pct", "boundary_pct", "balls_per_boundary", "economy",
-                "run_rate", "balls_per_wicket"}
+                "run_rate", "balls_per_wicket", "exp_sr", "true_sr", "exp_avg", "true_avg", "exp_economy",
+                "true_economy", "true_dot_pct", "true_boundary_pct"}
+# Shown for true stats: actual, expected, difference.
+TRUE_METRICS = {
+    "batting": ["innings", "balls", "runs", "exp_runs", "true_runs", "strike_rate", "exp_sr", "true_sr",
+                "average", "exp_avg", "true_avg"],
+    "bowling": ["innings", "balls", "wickets", "exp_wickets", "true_wickets", "economy", "exp_economy",
+                "true_economy", "runs_saved", "average", "exp_avg", "true_avg"],
+}
 
 # role: (source view, extra predicate, metric catalogue)
 ROLES = {

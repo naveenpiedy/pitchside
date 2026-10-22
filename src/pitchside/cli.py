@@ -10,7 +10,7 @@ from pitchside.config import get_tournament, load_tournaments
 from pitchside.engine import NameNotFound, PlayerNotFound, open_engine
 from pitchside.etl import attributes as attrs
 from pitchside.etl.download import download
-from pitchside.etl.load import connect, iter_zip, load_matches
+from pitchside.etl.load import connect, iter_zip, load_matches, rebuild as rebuild_db
 from pitchside.etl.register import connect_registry, load_attributes, refresh_register
 from pitchside.stats import cache
 from pitchside.stats import players as pl
@@ -189,6 +189,51 @@ def compare(
     """Compare players side by side under the same filters."""
     with _engine(comp) as e:
         _show(pl.compare(e, names, role, parse_cli_filters(filter), _csv(by), _csv(metrics) or None))
+
+
+@app.command("true")
+def true_cmd(
+    name: str,
+    role: str = ROLE_OPT,
+    by: str = typer.Option("season", "--by", "-b", help="Comma-separated dimensions"),
+    comp: list[str] = COMP_OPT,
+    filter: list[str] = FILTER_OPT,
+) -> None:
+    """True stats for a player: actual, expected (average player, same balls) and the difference."""
+    with _engine(comp) as e:
+        _show(pl.true_stats(e, name, role, _csv(by), parse_cli_filters(filter)))
+
+
+@app.command()
+def rebuild(tournament: str) -> None:
+    """Recompute derived tables and true-stat baselines (e.g. after changing rule_eras)."""
+    t = get_tournament(tournament)
+    con = connect(t.db_path)
+    try:
+        version = rebuild_db(con, t)
+    finally:
+        con.close()
+    typer.echo(f"{t.key}: rebuilt (data_version {version})")
+
+
+@app.command()
+def baselines(
+    tournament: str,
+    target: str = typer.Option("bat_runs", "--target", "-t",
+                               help="bat_runs bat_out bat_dot bat_bnd bowl_runs bowl_wkt bowl_dot bowl_bnd"),
+    phase: str = typer.Option(None, "--phase", "-p"),
+) -> None:
+    """Inspect true-stat situation factors (wickets down x setting/chasing, per rules era and phase)."""
+    con = connect(get_tournament(tournament).db_path, read_only=True)
+    try:
+        sql = ("SELECT era, phase, wickets_down, innings, round(factor, 3) AS factor, weight "
+               "FROM baseline_factors WHERE target = ?" + (" AND phase = ?" if phase else "") +
+               " ORDER BY era, CASE phase WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END, wickets_down, innings")
+        cur = con.execute(sql, [target, phase] if phase else [target])
+        _show(Table([c[0] for c in cur.description], [list(r) for r in cur.fetchall()],
+                    title=f"{tournament} {target} factors (1 = the over's season average)"))
+    finally:
+        con.close()
 
 
 @app.command()

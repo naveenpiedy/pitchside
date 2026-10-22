@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import duckdb
 
+from pitchside.model.baselines import build_expectations
+
 SEASON_YEAR = """
 UPDATE matches AS m SET season_year = s.y
 FROM (SELECT season, min(year(match_date)) AS y FROM matches GROUP BY season) AS s
@@ -152,6 +154,7 @@ GROUP BY ALL
 STEPS = [SEASON_YEAR, BATTING_INNINGS, BOWLING_INNINGS, SEASON_BATTING, SEASON_BOWLING]
 
 
-def refresh(con: duckdb.DuckDBPyConnection) -> None:
+def refresh(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] = ()) -> None:
     for sql in STEPS:
         con.execute(sql)
+    build_expectations(con, rule_eras)

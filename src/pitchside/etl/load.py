@@ -115,7 +115,7 @@ def load_matches(
             for table in CORE_TABLES:
                 _insert(con, table, getattr(batch, table))
             _upsert_players(con, batch.players)
-            derive.refresh(con)
+            derive.refresh(con, tournament.rule_eras)
             version = _bump_version(con)
             con.execute("INSERT OR REPLACE INTO meta VALUES ('last_load', ?)", [datetime.now().isoformat(timespec="seconds")])
             con.execute(
@@ -138,3 +138,19 @@ def _upsert_players(con: duckdb.DuckDBPyConnection, players: dict[str, str]) -> 
         con.execute("INSERT OR REPLACE INTO players SELECT player_id, name FROM _staged")
     finally:
         con.unregister("_staged")
+
+
+def rebuild(con: duckdb.DuckDBPyConnection, tournament: Tournament) -> int:
+    """Recompute every derived table (scorecards, season tables, baselines) without
+    loading data, e.g. after changing `rule_eras`. Bumps data_version so cached
+    results are invalidated."""
+    con.execute("BEGIN TRANSACTION")
+    try:
+        derive.refresh(con, tournament.rule_eras)
+        version = _bump_version(con)
+        con.execute("INSERT INTO ingest_log VALUES (?, ?, 0, 0, ?)", [datetime.now(), "rebuild", version])
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    return version

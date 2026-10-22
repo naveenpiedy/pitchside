@@ -8,7 +8,7 @@ from __future__ import annotations
 from pitchside.engine import Engine
 from pitchside.stats import cache
 from pitchside.stats.filters import FilterError
-from pitchside.stats.splits import DEFAULT_METRICS, RATE_METRICS, aggregate
+from pitchside.stats.splits import DEFAULT_METRICS, RATE_METRICS, TRUE_METRICS, aggregate
 from pitchside.stats.table import Table
 
 # Profile sections per role: (label, dimensions).
@@ -19,7 +19,9 @@ PROFILE_SECTIONS = {
     "bowling": [("by season", ["season"]), ("by phase", ["phase"]),
                 ("vs left / right-handers", ["batting_hand"]), ("setting / chasing", ["setting_chasing"])],
 }
-BOWLING_ONLY_METRICS = {"wickets", "economy", "wides", "noballs"}
+BOWLING_ONLY_METRICS = {"wickets", "economy", "wides", "noballs", "runs_saved", "exp_economy",
+                        "true_economy", "exp_wickets", "true_wickets"}
+TRUE_SECTIONS = [("true stats by season", ["season"]), ("true stats by phase", ["phase"])]
 MIN_ROLE_BALLS = 30  # below this, a role gets only its overall line
 
 
@@ -54,6 +56,9 @@ def profile(engine: Engine, player: str, filters: dict | None = None) -> list[Ta
                 continue
             for label, by in PROFILE_SECTIONS[role]:
                 tables.append(aggregate(engine, role, filters, by=by, players=[pid], title=f"{name}: {role} {label}"))
+            for label, by in TRUE_SECTIONS:
+                tables.append(aggregate(engine, role, filters, by=by, players=[pid], metrics=TRUE_METRICS[role],
+                                        title=f"{name}: {role} {label}"))
         return tables
 
     return cache.cached("profile", _args(pid=pid, filters=filters), engine.version_key, compute)
@@ -68,7 +73,9 @@ def leaderboard(engine: Engine, metric: str, role: str | None = None, filters: d
     title = f"Top {top} by {role} {metric}" + (f" per {per}" if per else "") + f" (min {min_balls} balls)"
 
     def compute() -> Table:
-        metrics = DEFAULT_METRICS[role] if metric in DEFAULT_METRICS[role] else DEFAULT_METRICS[role] + [metric]
+        is_true = metric.startswith(("true_", "exp_")) or metric.endswith("_saved")
+        base = TRUE_METRICS[role] if is_true else DEFAULT_METRICS[role]
+        metrics = base if metric in base else base + [metric]
         return aggregate(engine, role, filters, by=["player"], metrics=metrics, min_balls=min_balls,
                          order_by=metric, limit=top, per=per, title=title)
 
@@ -99,3 +106,9 @@ def compare(engine: Engine, players: list[str], role: str = "batting", filters: 
 
     return cache.cached("compare", _args(pids=pids, role=role, filters=filters, by=by, metrics=metrics),
                         engine.version_key, compute)
+
+
+def true_stats(engine: Engine, player: str, role: str = "batting", by: list[str] | None = None,
+               filters: dict | None = None) -> Table:
+    """A player's true stats (actual, expected, difference), split by any dimensions."""
+    return splits(engine, player, role, by or [], filters, TRUE_METRICS[role])
