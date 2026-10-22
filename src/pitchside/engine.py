@@ -8,9 +8,15 @@ views stitch them together, so every analysis is written once against:
 - v_bat   : batting facts, one row per ball faced plus one row per non-striker
             dismissal, keyed by `player_id` = the batter
 - v_bowl  : bowling facts, one row per delivery, keyed by `player_id` = the bowler
+- v_team  : team facts, every delivery twice (side = 'batting' / 'bowling')
+- v_results : one row per match per team, with the outcome for that team
 
-Shared column names across v_bat / v_bowl (team, opposition, batting_hand,
-bowl_type, position...) are what lets one filter grammar serve both roles.
+Shared column names across v_bat / v_bowl / v_team (team, opposition,
+batting_hand, bowl_type, position...) are what lets one filter grammar serve
+every role. Team and venue names are canonicalised through aliases.toml:
+`team` / `opposition` are franchises under their current name ("Delhi
+Daredevils" seasons count as Delhi Capitals), `team_name` / `opposition_name`
+are the names used that season, and `venue` is one name per ground.
 """
 
 from __future__ import annotations
@@ -20,17 +26,41 @@ from dataclasses import dataclass, field
 
 import duckdb
 
-from pitchside.config import REGISTRY_DB, Tournament, load_tournaments
+from pitchside.config import REGISTRY_DB, Tournament, load_aliases, load_tournaments
 
-V_BALLS_PART = """
-SELECT d.*, m.competition, m.season_year, m.match_date, m.venue, m.city,
-       CASE WHEN m.stage IS NULL THEN 'league' ELSE 'playoffs' END AS stage,
-       i.batting_team, i.bowling_team,
+V_MATCHES = """
+CREATE OR REPLACE TEMP VIEW v_matches AS
+SELECT m.* REPLACE (coalesce(va.canonical, m.venue) AS venue),
+       m.venue AS venue_raw,
+       coalesce(t1.canonical, m.team1) AS franchise1,
+       coalesce(t2.canonical, m.team2) AS franchise2,
+       coalesce(tw.canonical, m.winner) AS winner_franchise,
+       CASE WHEN m.stage IS NULL THEN 'league' ELSE 'playoffs' END AS stage_group
+FROM v_matches_raw m
+LEFT JOIN venue_alias va ON va.name = m.venue
+LEFT JOIN team_alias t1 ON t1.name = m.team1
+LEFT JOIN team_alias t2 ON t2.name = m.team2
+LEFT JOIN team_alias tw ON tw.name = m.winner
+"""
+
+V_INNINGS = """
+CREATE OR REPLACE TEMP VIEW v_innings AS
+SELECT i.*, coalesce(ba.canonical, i.batting_team) AS batting_franchise,
+       coalesce(bo.canonical, i.bowling_team) AS bowling_franchise
+FROM v_innings_raw i
+LEFT JOIN team_alias ba ON ba.name = i.batting_team
+LEFT JOIN team_alias bo ON bo.name = i.bowling_team
+"""
+
+V_BALLS = """
+CREATE OR REPLACE TEMP VIEW v_balls AS
+SELECT d.*, m.competition, m.season_year, m.match_date, m.venue, m.city, m.stage_group AS stage,
+       i.batting_team, i.bowling_team, i.batting_franchise, i.bowling_franchise,
        bat.batting_hand AS batter_hand, ns.batting_hand AS non_striker_hand,
        coalesce(bwl.bowl_type, 'unknown') AS bowl_type, bwl.bowl_subtype, bwl.bowling_arm
-FROM {db}.deliveries d
-JOIN {db}.matches m USING (match_id)
-JOIN {db}.innings i USING (match_id, innings_no)
+FROM v_deliveries_raw d
+JOIN v_matches m USING (match_id)
+JOIN v_innings i USING (match_id, innings_no)
 LEFT JOIN reg.player_attributes bat ON bat.player_id = d.batter_id
 LEFT JOIN reg.player_attributes ns  ON ns.player_id  = d.non_striker_id
 LEFT JOIN reg.player_attributes bwl ON bwl.player_id = d.bowler_id
@@ -44,7 +74,8 @@ CONTEXT_COLS = """match_id, innings_no, seq, competition, season_year, match_dat
 V_BAT = f"""
 CREATE OR REPLACE TEMP VIEW v_bat AS
 SELECT batter_id AS player_id, {CONTEXT_COLS},
-       batting_team AS team, bowling_team AS opposition,
+       batting_franchise AS team, bowling_franchise AS opposition,
+       batting_team AS team_name, bowling_team AS opposition_name,
        batting_position AS position, batter_hand AS batting_hand,
        batter_balls_before + 1 AS nth_ball,
        runs_batter AS runs, is_ball_faced::INT AS faced,
@@ -54,7 +85,7 @@ SELECT batter_id AS player_id, {CONTEXT_COLS},
 FROM v_balls
 UNION ALL
 SELECT non_striker_id, {CONTEXT_COLS},
-       batting_team, bowling_team,
+       batting_franchise, bowling_franchise, batting_team, bowling_team,
        non_striker_position, non_striker_hand,
        NULL, 0, 0, 0, 0, 0, 1
 FROM v_balls WHERE out_player_id = non_striker_id
@@ -63,7 +94,8 @@ FROM v_balls WHERE out_player_id = non_striker_id
 V_BOWL = f"""
 CREATE OR REPLACE TEMP VIEW v_bowl AS
 SELECT bowler_id AS player_id, {CONTEXT_COLS},
-       bowling_team AS team, batting_team AS opposition,
+       bowling_franchise AS team, batting_franchise AS opposition,
+       bowling_team AS team_name, batting_team AS opposition_name,
        batting_position AS position, batter_hand AS batting_hand,
        batter_balls_before + 1 AS nth_ball,
        is_legal::INT AS balls, bowler_runs AS runs,
@@ -72,6 +104,47 @@ SELECT bowler_id AS player_id, {CONTEXT_COLS},
        is_four::INT AS fours, is_six::INT AS sixes,
        (wides > 0)::INT AS wides, (noballs > 0)::INT AS noballs
 FROM v_balls
+"""
+
+TEAM_SIDE = """
+SELECT '{side}' AS side, {cols},
+       {team}_franchise AS team, {opp}_franchise AS opposition,
+       {team}_team AS team_name, {opp}_team AS opposition_name,
+       batting_position AS position, batter_hand AS batting_hand,
+       batter_balls_before + 1 AS nth_ball,
+       runs_total AS runs, runs_extras AS extras, is_legal::INT AS balls,
+       is_wicket::INT AS wickets, (is_legal AND runs_total = 0)::INT AS dot,
+       is_four::INT AS fours, is_six::INT AS sixes
+FROM v_balls
+"""
+V_TEAM = ("CREATE OR REPLACE TEMP VIEW v_team AS "
+          + TEAM_SIDE.format(side="batting", team="batting", opp="bowling", cols=CONTEXT_COLS)
+          + " UNION ALL "
+          + TEAM_SIDE.format(side="bowling", team="bowling", opp="batting", cols=CONTEXT_COLS))
+
+# Outcome per team per match. innings_no = 1 if the team batted first, so the
+# `innings` (setting / chasing) filter works on results too.
+V_RESULTS = """
+CREATE OR REPLACE TEMP VIEW v_results AS
+WITH sides AS (
+    SELECT m.*, s.k,
+           CASE s.k WHEN 1 THEN m.team1 ELSE m.team2 END AS team_name,
+           CASE s.k WHEN 1 THEN m.team2 ELSE m.team1 END AS opposition_name,
+           CASE s.k WHEN 1 THEN m.franchise1 ELSE m.franchise2 END AS team,
+           CASE s.k WHEN 1 THEN m.franchise2 ELSE m.franchise1 END AS opposition
+    FROM v_matches m CROSS JOIN (VALUES (1), (2)) s(k)
+)
+SELECT s.match_id, s.competition, s.season_year, s.match_date, s.venue, s.city,
+       s.stage_group AS stage, s.team, s.opposition, s.team_name, s.opposition_name,
+       CASE WHEN s.result = 'no result' THEN 'no result'
+            WHEN s.winner = s.team_name THEN 'won'
+            WHEN s.winner IS NULL THEN 'tied'
+            ELSE 'lost' END AS outcome,
+       s.result = 'tie' AS tied,
+       CASE WHEN i1.batting_team = s.team_name THEN 1 WHEN i1.batting_team IS NOT NULL THEN 2 END AS innings_no,
+       s.toss_winner = s.team_name AS won_toss, s.toss_decision, s.method
+FROM sides s
+LEFT JOIN v_innings i1 ON i1.match_id = s.match_id AND i1.innings_no = 1
 """
 
 REGISTRY_TABLES = {
@@ -89,12 +162,43 @@ class PlayerNotFound(LookupError):
         super().__init__(f"No unique player for {query!r}" + (f". Candidates: {hint}" if hint else ""))
 
 
+class NameNotFound(LookupError):
+    """A team or venue name that matches nothing, or several things."""
+
+    def __init__(self, kind: str, query: str, candidates: list[str]):
+        self.kind, self.query, self.candidates = kind, query, candidates
+        hint = "; ".join(candidates[:8])
+        super().__init__(f"No unique {kind} for {query!r}" + (f". Candidates: {hint}" if hint else ""))
+
+
+def _resolve_name(kind: str, query: str, names: dict[str, str]) -> str:
+    """Resolve against {name_or_alias: canonical}: exact (case-insensitive), then contains."""
+    q = query.strip().lower()
+    exact = {c for n, c in names.items() if n.lower() == q}
+    if len(exact) == 1:
+        return exact.pop()
+    found = sorted({c for n, c in names.items() if q in n.lower()})
+    if len(found) == 1:
+        return found[0]
+    raise NameNotFound(kind, query, found or sorted(set(names.values())))
+
+
 @dataclass
 class Engine:
     con: duckdb.DuckDBPyConnection
     competitions: list[Tournament]
     data_versions: dict[str, int]
     names: dict[str, str] = field(default_factory=dict)
+    team_names: dict[str, str] = field(default_factory=dict)   # name / old name / code -> franchise
+    venue_names: dict[str, str] = field(default_factory=dict)  # name / old name -> canonical ground
+
+    def resolve_team(self, query: str) -> str:
+        """Canonical franchise for a team name, former name or code ('RCB', 'Kings XI')."""
+        return _resolve_name("team", query, self.team_names)
+
+    def resolve_venue(self, query: str) -> str:
+        """Canonical ground for a venue name or part of one ('Chepauk', 'Wankhede')."""
+        return _resolve_name("venue", query, self.venue_names)
 
     @property
     def version_key(self) -> str:
@@ -203,17 +307,33 @@ def open_engine(competitions: list[str] | None = None) -> Engine:
         row = con.execute(f"SELECT value FROM {t.key}.meta WHERE key = 'data_version'").fetchone()
         versions[t.key] = int(row[0]) if row else 0
 
-    con.execute("CREATE OR REPLACE TEMP VIEW v_balls AS " +
-                " UNION ALL ".join(V_BALLS_PART.format(db=t.key) for t in selected))
-    con.execute("CREATE OR REPLACE TEMP VIEW v_players AS SELECT player_id, any_value(name) AS name FROM (" +
-                " UNION ALL ".join(f"SELECT * FROM {t.key}.players" for t in selected) + ") GROUP BY player_id")
-    con.execute("CREATE OR REPLACE TEMP VIEW v_matches AS " +
-                " UNION ALL BY NAME ".join(f"SELECT * FROM {t.key}.matches" for t in selected))
-    con.execute(V_BAT)
-    con.execute(V_BOWL)
+    aliases = load_aliases()
+    for kind in ("team", "venue"):
+        con.execute(f"CREATE TEMP TABLE {kind}_alias (name VARCHAR PRIMARY KEY, canonical VARCHAR)")
+        if aliases[f"{kind}s"]:
+            con.executemany(f"INSERT INTO {kind}_alias VALUES (?, ?)", list(aliases[f"{kind}s"].items()))
+
+    def union(table: str) -> str:
+        return " UNION ALL BY NAME ".join(f"SELECT * FROM {t.key}.{table}" for t in selected)
+
+    for table in ("matches", "innings", "deliveries"):
+        con.execute(f"CREATE OR REPLACE TEMP VIEW v_{table}_raw AS {union(table)}")
+    con.execute("CREATE OR REPLACE TEMP VIEW v_players AS SELECT player_id, any_value(name) AS name "
+                f"FROM ({union('players')}) GROUP BY player_id")
+    for view in (V_MATCHES, V_INNINGS, V_BALLS, V_BAT, V_BOWL, V_TEAM, V_RESULTS):
+        con.execute(view)
 
     names = dict(con.execute("SELECT player_id, name FROM v_players").fetchall())
     # Different players can share a name (two 'Harmeet Singh's): keep display names unique.
     counts = Counter(names.values())
     names = {pid: f"{n} ({pid})" if counts[n] > 1 else n for pid, n in names.items()}
-    return Engine(con=con, competitions=selected, data_versions=versions, names=names)
+
+    # Every name a team or ground appears under, plus configured aliases and codes.
+    team_names = {n: c for n, c in con.execute(
+        "SELECT team_name, any_value(team) FROM v_results GROUP BY 1").fetchall()}
+    team_names |= {n: c for n, c in aliases["teams"].items() if c in team_names.values()}
+    venue_names = {n: c for n, c in con.execute(
+        "SELECT venue_raw, any_value(venue) FROM v_matches GROUP BY 1").fetchall()}
+    venue_names |= {c: c for c in venue_names.values()}
+    return Engine(con=con, competitions=selected, data_versions=versions, names=names,
+                  team_names=team_names, venue_names=venue_names)

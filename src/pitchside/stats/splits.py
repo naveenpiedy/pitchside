@@ -21,8 +21,12 @@ DIMENSIONS: dict[str, str] = {
     "bowling_arm": "coalesce(bowling_arm, 'unknown')",
     "batting_hand": "coalesce(batting_hand, 'unknown')",
     "position": "position",
+    "order_group": ("CASE WHEN position <= 3 THEN '1-3 top' WHEN position <= 7 THEN '4-7 middle' "
+                    "ELSE '8-11 lower' END"),
     "team": "team",
     "opposition": "opposition",
+    "team_name": "team_name",
+    "opposition_name": "opposition_name",
     "venue": "venue",
     "city": "city",
     "stage": "stage",
@@ -37,6 +41,7 @@ ID_DIMENSIONS = {"player", "bowler", "batter"}
 # Dimensions with a natural order; the rest sort by volume (balls), biggest first.
 ORDERED = {
     "season": "season", "over": "over", "position": "position", "ball_bucket": "ball_bucket",
+    "order_group": "order_group",
     "phase": "CASE phase WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END",
     "setting_chasing": "min(innings_no)", "wickets_down": "wickets_down",
 }
@@ -69,22 +74,54 @@ BOWLING_METRICS: dict[str, tuple[str, bool]] = {
     "wides": ("sum(wides)", False),
     "noballs": ("sum(noballs)", False),
 }
+# Team-level facts (v_team): runs include extras, wickets are all dismissals.
+# The same numbers are good for the batting side and bad for the bowling side.
+_TEAM_SQL = {
+    "innings": "count(DISTINCT match_id || ':' || innings_no)",
+    "runs": "sum(runs)",
+    "balls": "sum(balls)",
+    "wickets": "sum(wickets)",
+    "run_rate": "round(6.0 * sum(runs) / nullif(sum(balls), 0), 2)",
+    "average": "round(sum(runs) / nullif(sum(wickets), 0), 2)",
+    "balls_per_wicket": "round(sum(balls) / nullif(sum(wickets), 0), 1)",
+    "dot_pct": "round(100.0 * sum(dot) / nullif(sum(balls), 0), 1)",
+    "boundary_pct": "round(100.0 * (sum(fours) + sum(sixes)) / nullif(sum(balls), 0), 1)",
+    "extras": "sum(extras)",
+    "fours": "sum(fours)",
+    "sixes": "sum(sixes)",
+}
+_BATTING_SIDE_GOOD = {"innings", "runs", "balls", "run_rate", "average", "balls_per_wicket",
+                      "boundary_pct", "extras", "fours", "sixes"}
+TEAM_BATTING_METRICS = {m: (sql, m in _BATTING_SIDE_GOOD) for m, sql in _TEAM_SQL.items()}
+TEAM_BOWLING_METRICS = {m: (sql, m not in _BATTING_SIDE_GOOD or m in ("innings", "balls"))
+                        for m, sql in _TEAM_SQL.items()}
+
 DEFAULT_METRICS = {
     "batting": ["innings", "runs", "balls", "outs", "average", "strike_rate", "dot_pct", "boundary_pct"],
     "bowling": ["innings", "balls", "runs", "wickets", "economy", "average", "strike_rate", "dot_pct", "boundary_pct"],
+    "team_batting": ["innings", "runs", "balls", "wickets", "run_rate", "average", "dot_pct", "boundary_pct"],
+    "team_bowling": ["innings", "runs", "balls", "wickets", "run_rate", "average", "dot_pct", "boundary_pct"],
 }
-RATE_METRICS = {"average", "strike_rate", "dot_pct", "boundary_pct", "balls_per_boundary", "economy"}
+RATE_METRICS = {"average", "strike_rate", "dot_pct", "boundary_pct", "balls_per_boundary", "economy",
+                "run_rate", "balls_per_wicket"}
+
+# role: (source view, extra predicate, metric catalogue)
+ROLES = {
+    "batting": ("v_bat", "TRUE", BATTING_METRICS),
+    "bowling": ("v_bowl", "TRUE", BOWLING_METRICS),
+    "team_batting": ("v_team", "side = 'batting'", TEAM_BATTING_METRICS),
+    "team_bowling": ("v_team", "side = 'bowling'", TEAM_BOWLING_METRICS),
+}
+TEAM_ROLES = {"team_batting", "team_bowling"}
 
 # Sample-size flags, by balls.
 LOW_SAMPLE, SMALL_SAMPLE = 30, 120
 
 
 def role_metrics(role: str) -> dict[str, tuple[str, bool]]:
-    if role == "batting":
-        return BATTING_METRICS
-    if role == "bowling":
-        return BOWLING_METRICS
-    raise FilterError(f"role must be 'batting' or 'bowling', got {role!r}")
+    if role not in ROLES:
+        raise FilterError(f"role must be one of {', '.join(ROLES)}, got {role!r}")
+    return ROLES[role][2]
 
 
 def aggregate(
@@ -116,17 +153,20 @@ def aggregate(
     for d in dims:
         if d not in DIMENSIONS:
             raise FilterError(f"Unknown dimension {d!r}; choose from {', '.join(DIMENSIONS)}")
+    if role in TEAM_ROLES and ("player" in dims or players):
+        raise FilterError(f"{role} is team-level: no 'player' dimension or players")
 
-    src = "v_bat" if role == "batting" else "v_bowl"
+    src, side, _ = ROLES[role]
     balls_sql = catalogue["balls"][0]
-    where, params = compile_filters(filters, engine.resolve_player)
+    where, params = compile_filters(filters, engine.resolve_player, engine.resolve_team)
+    where = f"{side} AND {where}"
     if players:
         where += f" AND player_id IN ({', '.join('?' * len(players))})"
         params += list(players)
 
     select = [f"{DIMENSIONS[d]} AS {d}" for d in dims]
     if "player" in dims:
-        select.append("arg_max(team, match_date) AS team")
+        select.append("arg_max(team_name, match_date) AS team")
     select += [f"{catalogue[m][0]} AS {m}" for m in metrics]
     if "balls" not in metrics:
         select.append(f"{balls_sql} AS _balls")

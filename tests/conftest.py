@@ -83,9 +83,34 @@ b2,B2,right,right,Right-arm offbreak,spin,OB,manual,
 """
 
 
+TEST_ALIASES = {
+    "teams": {"Reds": "Reds", "Old Reds": "Reds", "RD": "Reds", "Blues": "Blues", "BL": "Blues"},
+    "venues": {"Test Ground, Testville": "Test Ground, Testville", "Test Ground": "Test Ground, Testville"},
+}
+
+
+def rename_team(match: dict, old: str, new: str) -> dict:
+    """A copy of a match with one team renamed everywhere it appears."""
+    m = copy.deepcopy(match)
+    info = m["info"]
+    info["teams"] = [new if t == old else t for t in info["teams"]]
+    info["players"] = {new if t == old else t: p for t, p in info["players"].items()}
+    for k in ("winner",):
+        if info["toss"].get(k) == old:
+            info["toss"][k] = new
+    for k in ("winner", "eliminator"):
+        if info["outcome"].get(k) == old:
+            info["outcome"][k] = new
+    for inn in m["innings"]:
+        if inn["team"] == old:
+            inn["team"] = new
+    return m
+
+
 @pytest.fixture
-def mini_engine(tmp_path, monkeypatch, mini_match, test_tournament):
-    """An Engine over a temp competition DB holding MINI_MATCH, with a temp registry and cache."""
+def build_engine(tmp_path, monkeypatch, test_tournament):
+    """Factory: an Engine over a temp competition DB holding the given matches,
+    with a temp registry (ATTRIBUTES), test aliases and a temp cache."""
     import duckdb
 
     from pitchside import config
@@ -96,10 +121,6 @@ def mini_engine(tmp_path, monkeypatch, mini_match, test_tournament):
 
     monkeypatch.setattr(config, "DB_DIR", tmp_path)
     monkeypatch.setattr(cache, "CACHE_DB", tmp_path / "cache.duckdb")
-    con = connect(test_tournament.db_path)
-    load_matches(con, test_tournament, [("1", mini_match, "1.json")], source="test")
-    con.close()
-
     csv_path = tmp_path / "attributes.csv"
     csv_path.write_text(ATTRIBUTES)
     registry = tmp_path / "registry.duckdb"
@@ -108,6 +129,22 @@ def mini_engine(tmp_path, monkeypatch, mini_match, test_tournament):
     reg.close()
     monkeypatch.setattr(eng, "REGISTRY_DB", registry)
     monkeypatch.setattr(eng, "load_tournaments", lambda: {"test": test_tournament})
+    monkeypatch.setattr(eng, "load_aliases", lambda: TEST_ALIASES)
+    opened = []
 
-    with eng.open_engine() as e:
-        yield e
+    def build(matches: dict[str, dict]):
+        con = connect(test_tournament.db_path)
+        load_matches(con, test_tournament, [(mid, m, f"{mid}.json") for mid, m in matches.items()], source="test")
+        con.close()
+        opened.append(eng.open_engine())
+        return opened[-1]
+
+    yield build
+    for e in opened:
+        e.close()
+
+
+@pytest.fixture
+def mini_engine(build_engine, mini_match):
+    """An Engine over MINI_MATCH alone."""
+    return build_engine({"1": mini_match})

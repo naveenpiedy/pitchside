@@ -41,9 +41,9 @@ FILTERS: dict[str, Spec] = {
     "over": Spec("over_no + 1", "int", "over number 1-20, e.g. 16-20"),
     "innings": Spec("innings_no", "enum", "setting (1st innings) / chasing (2nd)", ("1", "2"),
                     (("setting", "1"), ("first", "1"), ("chasing", "2"), ("second", "2"))),
-    "team": Spec("team", "text", "the player's own team (contains, case-insensitive)"),
-    "opposition": Spec("opposition", "text", "opposing team (contains, case-insensitive)"),
-    "venue": Spec("venue", "text", "ground name (contains)"),
+    "team": Spec("team", "team", "own team: name, old name or code (RCB, KXIP); renamed franchises count as one"),
+    "opposition": Spec("opposition", "team", "opposing team: name, old name or code"),
+    "venue": Spec("venue", "text", "ground name (contains; grounds have one canonical name)"),
     "city": Spec("city", "text", "city (contains)"),
     "stage": Spec("stage", "enum", "league / playoffs", ("league", "playoffs")),
     "bowl_type": Spec("bowl_type", "enum", "bowler type: pace / spin / unknown", ("pace", "spin", "unknown"),
@@ -115,8 +115,12 @@ def _date_condition(col: str, value, params: list) -> str:
         raise FilterError(f"Bad date {s!r} (use YYYY-MM-DD or YYYY-MM-DD..YYYY-MM-DD)") from e
 
 
-def compile_filters(filters: dict | None, resolve_player=None) -> tuple[str, list]:
-    """Return (sql, params) for a WHERE clause. `resolve_player` maps a name to an id."""
+def compile_filters(filters: dict | None, resolve_player=None, resolve_team=None) -> tuple[str, list]:
+    """Return (sql, params) for a WHERE clause.
+
+    `resolve_player` maps a player name to an id, `resolve_team` a team name or
+    code to its canonical franchise name.
+    """
     clauses, params = [], []
     for key, value in (filters or {}).items():
         if value is None or value == "" or value == []:
@@ -147,10 +151,11 @@ def compile_filters(filters: dict | None, resolve_player=None) -> tuple[str, lis
             items = [str(i) for i in _items(value)]
             clauses.append(f"{spec.column} IN ({', '.join('?' * len(items))})")
             params += items
-        elif spec.kind == "player":
-            if resolve_player is None:
-                raise FilterError(f"Filter {key!r} needs player resolution")
-            ids = [resolve_player(str(i)) for i in _items(value)]
+        elif spec.kind in ("player", "team"):
+            resolve = resolve_player if spec.kind == "player" else resolve_team
+            if resolve is None:
+                raise FilterError(f"Filter {key!r} needs {spec.kind} resolution")
+            ids = [resolve(str(i)) for i in _items(value)]
             clauses.append(f"{spec.column} IN ({', '.join('?' * len(ids))})")
             params += ids
     return (" AND ".join(clauses) or "TRUE"), params

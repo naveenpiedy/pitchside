@@ -7,7 +7,7 @@ from contextlib import contextmanager
 import typer
 
 from pitchside.config import get_tournament, load_tournaments
-from pitchside.engine import PlayerNotFound, open_engine
+from pitchside.engine import NameNotFound, PlayerNotFound, open_engine
 from pitchside.etl import attributes as attrs
 from pitchside.etl.download import download
 from pitchside.etl.load import connect, iter_zip, load_matches
@@ -15,6 +15,7 @@ from pitchside.etl.register import connect_registry, load_attributes, refresh_re
 from pitchside.stats import cache
 from pitchside.stats import players as pl
 from pitchside.stats import scorecard as sc
+from pitchside.stats import teams as tm
 from pitchside.stats.filters import FilterError, describe, parse_cli_filters
 from pitchside.stats.splits import BATTING_METRICS, BOWLING_METRICS, DIMENSIONS
 from pitchside.stats.table import Table
@@ -36,7 +37,7 @@ def _engine(comps: list[str] | None):
     try:
         with open_engine(comps) as e:
             yield e
-    except (FilterError, PlayerNotFound, KeyError, FileNotFoundError) as err:
+    except (FilterError, PlayerNotFound, NameNotFound, KeyError, FileNotFoundError) as err:
         typer.echo(f"error: {err.args[0] if isinstance(err, KeyError) else err}", err=True)
         raise typer.Exit(2)
 
@@ -188,6 +189,43 @@ def compare(
     """Compare players side by side under the same filters."""
     with _engine(comp) as e:
         _show(pl.compare(e, names, role, parse_cli_filters(filter), _csv(by), _csv(metrics) or None))
+
+
+@app.command()
+def team(name: str, comp: list[str] = COMP_OPT, filter: list[str] = FILTER_OPT) -> None:
+    """Team profile: results, phase batting/bowling, bowling resources, batting depth."""
+    with _engine(comp) as e:
+        _show(tm.team_profile(e, name, parse_cli_filters(filter)))
+
+
+@app.command()
+def h2h(team_a: str, team_b: str, top: int = typer.Option(5, "--top", "-n"),
+        comp: list[str] = COMP_OPT, filter: list[str] = FILTER_OPT) -> None:
+    """Head-to-head between two teams."""
+    with _engine(comp) as e:
+        _show(tm.head_to_head(e, team_a, team_b, parse_cli_filters(filter), top))
+
+
+@app.command()
+def venue(name: str, top: int = typer.Option(5, "--top", "-n"),
+          comp: list[str] = COMP_OPT, filter: list[str] = FILTER_OPT) -> None:
+    """Venue profile: par scores, chasing and toss record, phase scoring, pace v spin, top players."""
+    with _engine(comp) as e:
+        _show(tm.venue_profile(e, name, parse_cli_filters(filter), top))
+
+
+@app.command("team-rank")
+def team_rank(
+    metric: str = typer.Argument("run_rate"),
+    side: str = typer.Option("batting", "--side", "-s", help="batting or bowling"),
+    per: str = typer.Option(None, "--per", help="Rank within each value of a dimension, e.g. season"),
+    top: int = typer.Option(None, "--top", "-n"),
+    comp: list[str] = COMP_OPT,
+    filter: list[str] = FILTER_OPT,
+) -> None:
+    """Teams ranked by a team metric, e.g. `team-rank run_rate -f phase=death -f season=2026`."""
+    with _engine(comp) as e:
+        _show(tm.team_ranking(e, metric, side, parse_cli_filters(filter), per, top))
 
 
 @attributes_app.command("fetch")
