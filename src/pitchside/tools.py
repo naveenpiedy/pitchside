@@ -171,7 +171,8 @@ def grammar() -> str:
         + ". Each is pulled towards the average under the same filters by k balls of prior evidence "
         "(k estimated from the data per rate). Rank with these when samples are small or uneven.",
         "## team metrics (team_ranking): " + ", ".join(TEAM_BATTING_METRICS),
-        "## net stats: net_* = actual vs an average player on the same balls (situation-, era-adjusted); "
+        "## net stats: net_* = actual vs an average player on the same balls (adjusted for situation, era "
+        "and ground; the ground factor spans a rules era, not one season); "
         "positive is always better; exp_* is the expectation.",
     ])
 

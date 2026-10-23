@@ -187,6 +187,7 @@ net_boundary_pct = 100 × (exp_bnd − fours − sixes) / balls
 
 - **Zero-sum.** Across all players in a season (and within every season–over), net runs, net outs, net dots and net boundaries sum to exactly zero, for batting and for bowling. An average player scores 0.
 - **Flat by situation.** League-wide, net stats are about 0 for every phase, wickets-down value, setting/chasing, balls-faced bucket and entry point. By ground they are close to 0 but not exactly, because the venue factor is shrunk: since 2023 Chepauk and Ekana still read about −3.5 net SR (−12 without the factor). Batting positions 9–11 stay negative, because tailenders really are worse batters.
+- **Venue factors span a rules era, not a season.** In one season a ground hosts about 7 matches, and its scoring compared with expectation swings by about ±6–11 net SR (root-mean-square per season, 2023–26), e.g. Eden Gardens +11.3 in 2024, −13.5 in 2026. Those swings do not carry over: across 2018–26, a ground's miss in one season has a correlation of −0.13 with its miss the next season (39 pairs). So they are noise (dew, a few extreme matches, the home side's form), not pitches changing character, and fitting per season would chase them. A batter who played a lot at a ground in one odd season carries some of that in that season's net stats; over several seasons it averages out.
 - **Era-aware.** Because `level` is per season, a 2010 batter and a 2026 batter are each measured against their own season.
 
 Both properties are enforced by tests; `pitchside baselines ipl` shows the factors.

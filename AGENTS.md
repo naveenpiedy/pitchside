@@ -70,7 +70,7 @@ On Windows, set `PYTHONIOENCODING=utf-8` when printing DuckDB tables (player nam
 
 - `tests/conftest.py` holds `MINI_MATCH`, a hand-built match covering the edge cases above. Add a case there when you add a rule.
 - `mini_engine` (conftest) builds an Engine over MINI_MATCH with a temp registry and cache; use it for engine/stat tests.
-- Net stats must stay zero-sum (per season, and per season-over for every target) and flat across wickets down / setting-chasing / phase / balls faced / entry point for the league; `tests/test_true_stats.py` checks both. A change to baselines that breaks either is a modelling bug, not a test to loosen.
+- Net stats must stay zero-sum (per season, and per season-over for every target) and flat across wickets down / setting-chasing / phase / balls faced / entry point (and, more loosely, venue) for the league; `tests/test_net_stats.py` checks both. A change to baselines that breaks either is a modelling bug, not a test to loosen.
 - `@pytest.mark.integration` tests reconcile IPL data with published records (season leaders, 2024 final) and check that `aggregate` totals equal the precomputed season tables for every player-season; keep them passing after any parse/derive/engine change.
 
 ## Data
