@@ -109,7 +109,7 @@ SCHEMA: dict[str, str] = {
     "{comp}.bowling_innings": "scorecard line per bowler per innings",
     "{comp}.season_batting": "per player per season batting totals",
     "{comp}.season_bowling": "per player per season bowling totals",
-    "{comp}.baseline_factors": "true-stat situation factors by target, era, phase, wickets_down, innings",
+    "{comp}.baseline_factors": "true-stat factors by target and kind (situation, settle, venue), era, phase, wickets_down, innings, venue",
     "{comp}.baseline_levels": "true-stat level by target, season, over",
     "reg.player_attributes": "batting_hand, bowling_arm, bowling_style, bowl_type (pace/spin), bowl_subtype",
 }

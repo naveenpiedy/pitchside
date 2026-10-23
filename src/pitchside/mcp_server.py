@@ -36,7 +36,7 @@ Workflow:
    summarise it. true_* measure efficiency vs an average player; wpa measures effect on results.
 
 True stats (true_*) compare each ball with what an average player in the same competition would produce
-in the same situation (over, season, wickets down, setting/chasing, rules era). Positive = better than
+in the same situation (over, season, wickets down, setting/chasing, ground, rules era). Positive = better than
 average; exp_* is the expectation. Results flag small samples (low < 30 balls, small < 120): treat them
 as noise.
 """

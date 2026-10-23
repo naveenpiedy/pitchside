@@ -40,6 +40,13 @@ def test_thin_cells_shrink_towards_one(mini_engine):
     assert {r[0] for r in mini_engine.con.execute("SELECT DISTINCT target FROM test.baseline_factors").fetchall()} == set(TARGETS)
 
 
+def test_venue_factor_uses_canonical_ground(mini_engine):
+    # MINI_MATCH is at "Test Ground"; TEST_ALIASES maps it to the canonical name.
+    venues = mini_engine.con.execute(
+        "SELECT DISTINCT venue, kind FROM test.baseline_factors WHERE kind = 'venue'").fetchall()
+    assert venues == [("Test Ground, Testville", "venue")]
+
+
 def test_rule_eras_split_factors(mini_engine, test_tournament):
     from dataclasses import replace
     mini_engine.close()  # release the database before writing to it
@@ -87,6 +94,13 @@ def test_ipl_true_stats_zero_sum_and_flat():
             assert all(abs(r["true_sr"]) < 3 for r in league if r["balls"] >= 5000), league
             league = aggregate(e, "bowling", by=[dim], metrics=["balls", "true_economy"]).records()
             assert all(abs(r["true_economy"]) < 0.3 for r in league if r["balls"] >= 5000), league
+
+        # Venue-adjusted: grounds are ~flat too. Looser than above because venue factors are shrunk
+        # hard (VENUE_PRIOR_BALLS), so a ground keeps part of its effect; unadjusted, Chepauk 2023+ was ~-12.
+        league = aggregate(e, "batting", by=["venue"], metrics=["balls", "true_sr"]).records()
+        assert all(abs(r["true_sr"]) < 4 for r in league if r["balls"] >= 5000), league
+        league = aggregate(e, "bowling", by=["venue"], metrics=["balls", "true_economy"]).records()
+        assert all(abs(r["true_economy"]) < 0.3 for r in league if r["balls"] >= 5000), league
 
         # Expectations follow the game: death overs expect more runs than the powerplay.
         sr = {r["phase"]: r["exp_sr"] for r in aggregate(e, "batting", by=["phase"], metrics=["exp_sr"]).records()}

@@ -117,6 +117,7 @@ def build_engine(tmp_path, monkeypatch, test_tournament):
     from pitchside import engine as eng
     from pitchside.etl.load import connect, load_matches
     from pitchside.etl.register import load_attributes
+    from pitchside.model import derive
     from pitchside.stats import cache
 
     monkeypatch.setattr(config, "DB_DIR", tmp_path)
@@ -130,6 +131,7 @@ def build_engine(tmp_path, monkeypatch, test_tournament):
     monkeypatch.setattr(eng, "REGISTRY_DB", registry)
     monkeypatch.setattr(eng, "load_tournaments", lambda: {"test": test_tournament})
     monkeypatch.setattr(eng, "load_aliases", lambda: TEST_ALIASES)
+    monkeypatch.setattr(derive, "load_aliases", lambda: TEST_ALIASES)
     opened = []
 
     def build(matches: dict[str, dict]):

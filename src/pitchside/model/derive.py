@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import duckdb
 
+from pitchside.config import load_aliases
 from pitchside.model.baselines import build_expectations
 from pitchside.model.shrinkage import build_priors
 from pitchside.model.winprob import build_winprob
@@ -159,6 +160,6 @@ STEPS = [SEASON_YEAR, BATTING_INNINGS, BOWLING_INNINGS, SEASON_BATTING, SEASON_B
 def refresh(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] = ()) -> None:
     for sql in STEPS:
         con.execute(sql)
-    build_expectations(con, rule_eras)
+    build_expectations(con, rule_eras, load_aliases()["venues"])
     build_priors(con)
     build_winprob(con)

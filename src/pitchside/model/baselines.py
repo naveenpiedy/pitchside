@@ -5,6 +5,7 @@ would produce, for eight targets: the batter's runs, dismissal, dot and
 boundary chances, and the bowler's runs, wicket, dot and boundary chances.
 
     expected = level(season, over) × factor(rules era, phase, wickets down, innings)
+               × settle(rules era, phase, balls faced) × venue(rules era, ground)
 
 1. level   : the competition's rate for that over in that season. Era
              normalisation comes from here: 2010 and 2025 are each judged
@@ -23,6 +24,12 @@ boundary chances, and the bowler's runs, wicket, dot and boundary chances.
              bowlers look better against new batters. It stops at 11+ on
              purpose: batters who reach 30 or 40 balls are disproportionately
              the good ones, and a finer split would absorb that skill.
+   venue   : a third factor per (rules era, ground), so a batter based at a
+             flat ground isn't credited with the pitch (2022-25 IPL grounds
+             spanned ~25 batting runs per 120 balls, Chepauk to Eden Gardens).
+             Grounds are canonicalised through aliases.toml. Shrunk much harder
+             (VENUE_PRIOR_BALLS) because half a ground's balls belong to the
+             home side: a lightly shrunk factor would absorb the home team's skill.
 3. rescale : within each (season, over), expectations are scaled so their sum
              equals the actual total. The factors and the rescale alternate
              (iterative proportional fitting) so expectations match actuals on
@@ -39,6 +46,7 @@ from __future__ import annotations
 import duckdb
 
 PRIOR_BALLS = 50   # pseudo-balls pulling thin factor cells towards 1
+VENUE_PRIOR_BALLS = 2400  # ~10 matches: a ground with 10 matches keeps about half its observed effect
 FIT_ROUNDS = 10    # alternating factor / scale fits; converges well within this
 
 # target: (value per delivery, weight: which deliveries carry the expectation)
@@ -76,11 +84,13 @@ SELECT d.match_id, d.innings_no, d.seq, m.season_year, {era} AS era, d.phase,
        least(m.overs - 1, floor(d.over_no * m.overs * m.balls_per_over / nullif(i.allocated_balls, 0)))::INT AS eff_over,
        least(d.wickets_before, 8) AS wb,
        d.innings_no AS inns,
+       coalesce(va.canonical, m.venue, 'unknown') AS venue,
        CASE WHEN d.batter_balls_before < 5 THEN 0 WHEN d.batter_balls_before < 10 THEN 1 ELSE 2 END AS bf,
        {cols}
 FROM deliveries d
 JOIN matches m USING (match_id)
 JOIN innings i USING (match_id, innings_no)
+LEFT JOIN _venue_alias va ON va.name = m.venue
 WHERE NOT i.is_super_over
 """
 
@@ -95,7 +105,7 @@ FROM _bb GROUP BY ALL;
 
 -- prediction from the level alone
 CREATE OR REPLACE TEMP TABLE _p_{t} AS
-SELECT b.match_id, b.innings_no, b.seq, b.season_year, b.eff_over, b.era, b.phase, b.wb, b.inns, b.bf,
+SELECT b.match_id, b.innings_no, b.seq, b.season_year, b.eff_over, b.era, b.phase, b.wb, b.inns, b.bf, b.venue,
        b.{y} AS y, b.{w} AS w, coalesce(l.level, 0) * b.{w} AS pred
 FROM _bb b JOIN _l_{t} l USING (season_year, eff_over);
 
@@ -103,11 +113,15 @@ CREATE OR REPLACE TEMP TABLE _s_{t} AS
 SELECT season_year, eff_over, 1.0 AS scale FROM _l_{t};
 CREATE OR REPLACE TEMP TABLE _g_{t} AS
 SELECT DISTINCT era, phase, bf, 1.0 AS factor, 0 AS weight FROM _bb;
+CREATE OR REPLACE TEMP TABLE _v_{t} AS
+SELECT DISTINCT era, venue, 1.0 AS factor, 0 AS weight FROM _bb;
 """
 
-# Factor for a cell given everything else: (actual + prior) / (predicted + prior).
-_FACTOR = f"""(sum(y) + {PRIOR_BALLS} * sum(sp) / nullif(sum(w), 0))
-         / nullif(sum(sp) + {PRIOR_BALLS} * sum(sp) / nullif(sum(w), 0), 0) AS factor"""
+
+def _factor(prior: int) -> str:
+    """Factor for a cell given everything else: (actual + prior) / (predicted + prior)."""
+    return f"""(sum(y) + {prior} * sum(sp) / nullif(sum(w), 0))
+         / nullif(sum(sp) + {prior} * sum(sp) / nullif(sum(w), 0), 0) AS factor"""
 
 
 def _fit_sql(t: str) -> str:
@@ -116,23 +130,35 @@ def _fit_sql(t: str) -> str:
     return f"""
 -- 2a. situation factor per (era, phase, wickets, innings), with PRIOR_BALLS pseudo-balls at 1
 CREATE OR REPLACE TEMP TABLE _f_{t} AS
-WITH p AS (SELECT p.*, p.pred * s.scale * g.factor AS sp FROM _p_{t} p
-           JOIN _s_{t} s USING (season_year, eff_over) JOIN _g_{t} g USING (era, phase, bf))
-SELECT era, phase, wb, inns, sum(w) AS weight, {_FACTOR}
+WITH p AS (SELECT p.*, p.pred * s.scale * g.factor * v.factor AS sp FROM _p_{t} p
+           JOIN _s_{t} s USING (season_year, eff_over) JOIN _g_{t} g USING (era, phase, bf)
+           JOIN _v_{t} v USING (era, venue))
+SELECT era, phase, wb, inns, sum(w) AS weight, {_factor(PRIOR_BALLS)}
 FROM p GROUP BY ALL;
 
 -- 2b. settle factor per (era, phase, balls already faced)
 CREATE OR REPLACE TEMP TABLE _g_{t} AS
-WITH p AS (SELECT p.*, p.pred * s.scale * coalesce(f.factor, 1) AS sp FROM _p_{t} p
-           JOIN _s_{t} s USING (season_year, eff_over) JOIN _f_{t} f USING (era, phase, wb, inns))
-SELECT era, phase, bf, sum(w) AS weight, {_FACTOR}
+WITH p AS (SELECT p.*, p.pred * s.scale * coalesce(f.factor, 1) * v.factor AS sp FROM _p_{t} p
+           JOIN _s_{t} s USING (season_year, eff_over) JOIN _f_{t} f USING (era, phase, wb, inns)
+           JOIN _v_{t} v USING (era, venue))
+SELECT era, phase, bf, sum(w) AS weight, {_factor(PRIOR_BALLS)}
+FROM p GROUP BY ALL;
+
+-- 2c. venue factor per (era, ground), shrunk by VENUE_PRIOR_BALLS
+CREATE OR REPLACE TEMP TABLE _v_{t} AS
+WITH p AS (SELECT p.*, p.pred * s.scale * coalesce(f.factor, 1) * coalesce(g.factor, 1) AS sp FROM _p_{t} p
+           JOIN _s_{t} s USING (season_year, eff_over) JOIN _f_{t} f USING (era, phase, wb, inns)
+           JOIN _g_{t} g USING (era, phase, bf))
+SELECT era, venue, sum(w) AS weight, {_factor(VENUE_PRIOR_BALLS)}
 FROM p GROUP BY ALL;
 
 -- 3. rescale so each (season, over) sums to its actual total
 CREATE OR REPLACE TEMP TABLE _s_{t} AS
 SELECT p.season_year, p.eff_over,
-       coalesce(sum(p.y) / nullif(sum(p.pred * coalesce(f.factor, 1) * coalesce(g.factor, 1)), 0), 0) AS scale
+       coalesce(sum(p.y) / nullif(sum(p.pred * coalesce(f.factor, 1) * coalesce(g.factor, 1)
+                                      * coalesce(v.factor, 1)), 0), 0) AS scale
 FROM _p_{t} p JOIN _f_{t} f USING (era, phase, wb, inns) JOIN _g_{t} g USING (era, phase, bf)
+JOIN _v_{t} v USING (era, venue)
 GROUP BY ALL;
 """
 
@@ -141,17 +167,23 @@ def _expected_sql(t: str) -> str:
     return f"""
 CREATE OR REPLACE TEMP TABLE _e_{t} AS
 SELECT p.match_id, p.innings_no, p.seq, p.eff_over,
-       p.pred * coalesce(f.factor, 1) * coalesce(g.factor, 1) * s.scale AS exp_{t}
+       p.pred * coalesce(f.factor, 1) * coalesce(g.factor, 1) * coalesce(v.factor, 1) * s.scale AS exp_{t}
 FROM _p_{t} p
 JOIN _f_{t} f USING (era, phase, wb, inns)
 JOIN _g_{t} g USING (era, phase, bf)
+JOIN _v_{t} v USING (era, venue)
 JOIN _s_{t} s USING (season_year, eff_over);
 """
 
 
-def build_expectations(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | list[int] = ()) -> None:
+def build_expectations(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | list[int] = (),
+                       venue_aliases: dict[str, str] | None = None) -> None:
     """(Re)build `expected` (one row per delivery) and the inspection tables
-    `baseline_levels` and `baseline_factors` in a competition database."""
+    `baseline_levels` and `baseline_factors` in a competition database.
+    `venue_aliases` maps each venue name to its canonical ground (aliases.toml)."""
+    con.execute("CREATE OR REPLACE TEMP TABLE _venue_alias (name VARCHAR PRIMARY KEY, canonical VARCHAR)")
+    if venue_aliases:
+        con.executemany("INSERT INTO _venue_alias VALUES (?, ?)", list(venue_aliases.items()))
     con.execute(_base_sql(rule_eras))
     for t in TARGETS:
         con.execute(_target_sql(t))
@@ -174,10 +206,12 @@ def build_expectations(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...
     con.execute("CREATE OR REPLACE TABLE baseline_factors AS " + " UNION ALL ".join(
         f"SELECT '{t}' AS target, 'situation' AS kind, {era_case} AS era, phase, {wb_case} AS wickets_down, "
         f"CASE inns WHEN 1 THEN 'setting' ELSE 'chasing' END AS innings, NULL::VARCHAR AS balls_faced, "
-        f"factor, weight FROM _f_{t} UNION ALL "
-        f"SELECT '{t}', 'settle', {era_case}, phase, NULL, NULL, {bf_case}, factor, weight FROM _g_{t}"
+        f"NULL::VARCHAR AS venue, factor, weight FROM _f_{t} UNION ALL "
+        f"SELECT '{t}', 'settle', {era_case}, phase, NULL, NULL, {bf_case}, NULL, factor, weight FROM _g_{t} UNION ALL "
+        f"SELECT '{t}', 'venue', {era_case}, NULL, NULL, NULL, NULL, venue, factor, weight FROM _v_{t}"
         for t in TARGETS))
     for t in TARGETS:
-        for prefix in ("_l", "_p", "_f", "_g", "_s", "_e"):
+        for prefix in ("_l", "_p", "_f", "_g", "_v", "_s", "_e"):
             con.execute(f"DROP TABLE IF EXISTS {prefix}_{t}")
     con.execute("DROP TABLE IF EXISTS _bb")
+    con.execute("DROP TABLE IF EXISTS _venue_alias")

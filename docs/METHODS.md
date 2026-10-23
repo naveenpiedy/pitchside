@@ -86,14 +86,15 @@ boundary_pct = 100 × (fours + sixes conceded) / balls
 
 ## 4. True stats
 
-True stats compare each player with what an average player would have produced on **the same balls**: same competition, season, over, wickets down, innings, and how settled the batter was. Positive always means better than average.
+True stats compare each player with what an average player would have produced on **the same balls**: same competition, season, over, wickets down, innings, ground, and how settled the batter was. Positive always means better than average.
 
 ### 4.1 The expected value of each ball
 
 For each ball and each of eight targets (batter: runs, dismissal, dot, boundary; bowler: runs conceded, wicket, dot, boundary), the expected value is:
 
 ```
-E[ball] = level(season, over) × situation(era, phase, wickets down, innings) × settle(era, phase, balls faced) × scale(season, over)
+E[ball] = level(season, over) × situation(era, phase, wickets down, innings) × settle(era, phase, balls faced)
+          × venue(era, ground) × scale(season, over)
 ```
 
 | Piece | What it captures | Estimated on |
@@ -101,11 +102,12 @@ E[ball] = level(season, over) × situation(era, phase, wickets down, innings) ×
 | `level` | The competition's average rate for that over in that season. This is the era adjustment: 2010 balls are compared with 2010, 2026 with 2026. | All balls of that over number in that season (≈ 74 matches × 2 innings in a modern IPL season) |
 | `situation` | How much more or less is produced at this many wickets down (each of 0–7, then 8+ together), setting or chasing. | All seasons in the same **rules era** and phase. IPL eras: before 2023 and 2023+ (Impact Player). |
 | `settle` | How settled the striker is: balls 1–5 (new), 6–10 (getting in), 11+ (set). | Same rules era and phase. Stops at 11+ on purpose: batters who last 30+ balls are disproportionately the good ones, so a finer split would hide skill. |
+| `venue` | How much more or less this ground produces than the league, so a batter based at a flat ground isn't credited with the pitch (and a bowler at a slow one isn't credited with it either). | All matches at that ground in the same rules era. Grounds are canonicalised through `aliases.toml`, so a renamed ground is one cell. Shrunk with a prior of 2,400 balls (≈ 10 matches), not 50: see below. |
 | `scale` | A correction so that, within each season and over, expected totals equal actual totals exactly. | Each season–over |
 
 Shortened innings are mapped onto the 20-over scale (`effective over = floor(over × 120 / allocated balls)`), so the last over of a 5-over game is compared with other last overs.
 
-**Fitting.** The factors are estimated by iterative proportional fitting: starting with all factors at 1, the situation factors, settle factors and scales are re-estimated in turn (10 rounds) until expected matches actual on every margin. Each factor is
+**Fitting.** The factors are estimated by iterative proportional fitting: starting with all factors at 1, the situation, settle and venue factors and the scales are re-estimated in turn (10 rounds) until expected matches actual on every margin. Each factor is
 
 ```
 factor(cell) = (Σ actual + 50 × r̄) / (Σ predicted + 50 × r̄)        r̄ = Σ predicted / balls in the cell
@@ -113,17 +115,20 @@ factor(cell) = (Σ actual + 50 × r̄) / (Σ predicted + 50 × r̄)        r̄ =
 
 where "predicted" uses the current values of everything else. The 50 is a prior of 50 balls at factor 1, so thin cells (8+ wickets down in the death in one era) can't swing wildly. The last step is always the rescale, which guarantees the zero-sum property below.
 
+**Why the venue prior is 2,400 balls.** Half the balls at a ground are faced (and bowled) by the home side, so a ground's raw rate mixes the pitch with the home team's skill. Lightly shrunk, the venue factor would absorb that skill and erase it from the home players' true stats. With 2,400 pseudo-balls a ground keeps about half its observed effect after 10 matches and about 80% after 40. Example, IPL 2023+, batting runs: Chepauk 0.93, Ekana (Lucknow) 0.94, Wankhede 1.03, Chinnaswamy 1.02 (`pitchside baselines ipl` lists every ground).
+
 **Worked example: one ball.** IPL 2024, match 1422124, chase, ball 15.2 (2nd ball of the 16th over, the death). Kohli has faced 44 balls (settled), team 119/4 needing 58 off 29. Expected runs off the bat on this ball:
 
 ```
 level    (2024, over 16, runs per ball faced)   1.6186
-situation (2023+, death, 4 down, chasing)      × 1.0916
-settle    (2023+, death, 11+ balls)             × 1.0882
-scale     (2024, over 16)                       × 0.9518
-                                                = 1.8299 expected runs
+situation (2023+, death, 4 down, chasing)      × 1.0893
+settle    (2023+, death, 11+ balls)             × 1.0879
+venue     (2023+, M Chinnaswamy Stadium)        × 1.0183
+scale     (2024, over 16)                       × 0.9577
+                                                = 1.8706 expected runs
 ```
 
-He hit Harshal Patel for 4, so this ball's contribution to his true runs is 4 − 1.83 = **+2.17**. His expected chance of dismissal on that ball was 0.0501.
+He hit Harshal Patel for 4, so this ball's contribution to his true runs is 4 − 1.87 = **+2.13**. His expected chance of dismissal on that ball was 0.0506.
 
 ### 4.2 Batting true stats
 
@@ -146,12 +151,12 @@ The dismissal expectation per ball counts any dismissal on that ball (including 
 
 | | Actual | Expected | True |
 |---|---|---|---|
-| Runs, balls | 741 off 479 | 767.4 | true_runs = 741 − 767.4 = **−26.4** |
-| Strike rate | 100 × 741/479 = 154.70 | 100 × 767.4/479 = 160.21 | true_sr = **−5.52** |
-| Outs | 12 | 24.18 | outs_saved = **+12.18** |
-| Average | 741/12 = 61.75 | 767.4/24.18 = 31.74 | true_avg = **+30.01** |
+| Runs, balls | 741 off 479 | 778.6 | true_runs = 741 − 778.6 = **−37.6** |
+| Strike rate | 100 × 741/479 = 154.70 | 100 × 778.6/479 = 162.54 | true_sr = **−7.84** |
+| Outs | 12 | 24.0 | outs_saved = **+12.0** |
+| Average | 741/12 = 61.75 | 778.6/24.0 = 32.51 | true_avg = **+29.24** |
 
-Reading: he scored a little slower than an average batter would have on his balls (−5.5 per 100 balls), but was dismissed half as often as expected, so his average was 30 runs better than par. That's the classic anchor profile.
+Reading: he scored slower than an average batter would have on his balls (−7.8 per 100 balls), but was dismissed half as often as expected, so his average was 29 runs better than par. That's the classic anchor profile. Before the venue factor his true SR read −5.5: half his innings were at Chinnaswamy, and the extra runs that ground gives everyone were being credited to him.
 
 ### 4.3 Bowling true stats
 
@@ -172,16 +177,16 @@ true_boundary_pct = 100 × (exp_bnd − fours − sixes) / balls
 
 | | Actual | Expected | True |
 |---|---|---|---|
-| Runs off 311 balls | 336 | 513.5 | runs_saved = **+177.5** |
-| Economy | 6 × 336/311 = 6.48 | 6 × 513.5/311 = 9.91 | true_economy = **+3.42** runs/over |
-| Wickets | 20 | 17.03 | true_wickets = **+2.97** |
-| Average | 336/20 = 16.80 | 513.5/17.03 = 30.15 | true_avg = **+13.35** |
-| Strike rate | 311/20 = 15.6 | 311/17.03 = 18.3 | true_sr = **+2.7** |
+| Runs off 311 balls | 336 | 521.7 | runs_saved = **+185.7** |
+| Economy | 6 × 336/311 = 6.48 | 6 × 521.7/311 = 10.06 | true_economy = **+3.58** runs/over |
+| Wickets | 20 | 17.0 | true_wickets = **+3.0** |
+| Average | 336/20 = 16.80 | 521.7/17.0 = 30.6 | true_avg = **+13.8** |
+| Strike rate | 311/20 = 15.6 | 311/17.0 = 18.3 | true_sr = **+2.7** |
 
 ### 4.4 Properties you can rely on
 
 - **Zero-sum.** Across all players in a season (and within every season–over), true runs, true outs, true dots and true boundaries sum to exactly zero, for batting and for bowling. An average player scores 0.
-- **Flat by situation.** League-wide, true stats are about 0 for every phase, wickets-down value, setting/chasing, balls-faced bucket and entry point. Batting positions 9–11 stay negative, because tailenders really are worse batters.
+- **Flat by situation.** League-wide, true stats are about 0 for every phase, wickets-down value, setting/chasing, balls-faced bucket and entry point. By ground they are close to 0 but not exactly, because the venue factor is shrunk: since 2023 Chepauk and Ekana still read about −3.5 true SR (−12 without the factor). Batting positions 9–11 stay negative, because tailenders really are worse batters.
 - **Era-aware.** Because `level` is per season, a 2010 batter and a 2026 batter are each measured against their own season.
 
 Both properties are enforced by tests; `pitchside baselines ipl` shows the factors.
@@ -213,26 +218,26 @@ k   = σ² / τ²                  clamped to [20, 5000]
 | Batting runs per ball | 85 | | Bowling runs per ball | 93 |
 | Batting dot rate | 83 | | Bowling dot rate | 70 |
 | Batting boundary rate | 88 | | Bowling wicket rate | 1,417 |
-| Batting dismissal rate | 2,387 | | Bowling true runs per ball | 266 |
-| Batting true runs per ball | 166 | | Bowling true wickets per ball | 5,000 (cap) |
-| Batting true dismissals per ball | 1,081 | | | |
+| Batting dismissal rate | 2,387 | | Bowling true runs per ball | 277 |
+| Batting true runs per ball | 177 | | Bowling true wickets per ball | 5,000 (cap) |
+| Batting true dismissals per ball | 1,083 | | | |
 
 Dismissal and wicket rates need over 1,000 balls to become half-reliable: in T20 they are mostly noise, which is a property of the data. True wickets hit the cap: at season level, wicket-taking beyond what the situation explains is barely detectable.
 
 **Which metrics.** Batting: `strike_rate_shrunk`, `average_shrunk` (shrunk runs per ball ÷ shrunk dismissals per ball), `dot_pct_shrunk`, `boundary_pct_shrunk`, `true_sr_shrunk`, `true_avg_shrunk`. Bowling: `economy_shrunk`, `average_shrunk`, `strike_rate_shrunk`, `dot_pct_shrunk`, `true_economy_shrunk`, `true_wickets_shrunk` (shrunk per-ball rate × balls). True stats shrink the *difference from expectation*; the expectation itself (the player's context) is never shrunk.
 
-**Worked example: Kohli, 2024.** True runs −26.43 off 479 balls; the 2024 population true rate is 0 by construction; k = 166.5:
+**Worked example: Kohli, 2024.** True runs −37.55 off 479 balls; the 2024 population true rate is 0 by construction; k = 177.2:
 
 ```
-true_sr_shrunk = 100 × (−26.43 + 166.5 × 0) / (479 + 166.5) = −4.09     (raw −5.52)
+true_sr_shrunk = 100 × (−37.55 + 177.2 × 0) / (479 + 177.2) = −5.72     (raw −7.84)
 ```
 
 **Small vs large sample, 2026:**
 
 | Player | Balls | True SR (raw) | True SR (shrunk) |
 |---|---|---|---|
-| Vaibhav Suryavanshi | 327 | +71.86 | **+47.62** |
-| Azmatullah Omarzai | 27 | +49.37 | **+6.89** |
+| Vaibhav Suryavanshi | 327 | +71.89 | **+46.62** |
+| Azmatullah Omarzai | 27 | +43.80 | **+5.79** |
 
 Both had remarkable raw numbers; only one had enough balls to keep most of it.
 
@@ -432,6 +437,7 @@ Composed entirely from the pieces above; nothing new is modelled.
 |---|---|---|
 | Per-ball expectation: level | One competition, one season, one over number | At load |
 | Per-ball expectation: situation and settle factors | One competition, one rules era, one phase | At load |
+| Per-ball expectation: venue factor | One competition, one rules era, one ground | At load |
 | Shrinkage `k` | One competition, all player-seasons with 60+ balls | At load |
 | Win-probability model | One competition, all seasons; era context via season runs per ball | At load |
 | Shrinkage population rate `μ` | Your slice (same filters, all players) | Per query |
