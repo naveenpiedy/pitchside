@@ -66,18 +66,18 @@ BATTING_METRICS: dict[str, tuple[str, bool]] = {  # name: (sql, higher_is_better
     "balls_per_boundary": ("round(sum(faced) / nullif(sum(fours) + sum(sixes), 0), 1)", False),
     "fours": ("sum(fours)", True),
     "sixes": ("sum(sixes)", True),
-    # True stats: actual vs what an average batter would have produced on the same balls
-    # (model/baselines.py). Positive true_* is always better than average.
+    # Net stats: actual vs what an average batter would have produced on the same balls
+    # (model/baselines.py). Positive net_* is always better than average.
     "exp_runs": ("round(sum(exp_runs), 1)", True),
-    "true_runs": ("round(sum(runs) - sum(exp_runs), 1)", True),
+    "net_runs": ("round(sum(runs) - sum(exp_runs), 1)", True),
     "exp_sr": ("round(100.0 * sum(exp_runs) / nullif(sum(faced), 0), 2)", True),
-    "true_sr": ("round(100.0 * (sum(runs) - sum(exp_runs)) / nullif(sum(faced), 0), 2)", True),
+    "net_sr": ("round(100.0 * (sum(runs) - sum(exp_runs)) / nullif(sum(faced), 0), 2)", True),
     "exp_avg": ("round(sum(exp_runs) / nullif(sum(exp_out), 0), 2)", True),
-    "true_avg": ("round(sum(runs) / nullif(sum(out), 0) - sum(exp_runs) / nullif(sum(exp_out), 0), 2)", True),
+    "net_avg": ("round(sum(runs) / nullif(sum(out), 0) - sum(exp_runs) / nullif(sum(exp_out), 0), 2)", True),
     "exp_outs": ("round(sum(exp_out), 1)", False),
     "outs_saved": ("round(sum(exp_out) - sum(out), 1)", True),
-    "true_dot_pct": ("round(100.0 * (sum(exp_dot) - sum(dot)) / nullif(sum(faced), 0), 1)", True),
-    "true_boundary_pct": ("round(100.0 * (sum(fours) + sum(sixes) - sum(exp_bnd)) / nullif(sum(faced), 0), 1)", True),
+    "net_dot_pct": ("round(100.0 * (sum(exp_dot) - sum(dot)) / nullif(sum(faced), 0), 1)", True),
+    "net_boundary_pct": ("round(100.0 * (sum(fours) + sum(sixes) - sum(exp_bnd)) / nullif(sum(faced), 0), 1)", True),
     # Win probability added (A1), in wins: the change in the batting side's win chance on balls faced.
     "wpa": ("round(sum(wpa), 2)", True),
     "wpa_per_match": ("round(sum(wpa) / nullif(count(DISTINCT match_id), 0), 3)", True),
@@ -96,19 +96,19 @@ BOWLING_METRICS: dict[str, tuple[str, bool]] = {
     "sixes": ("sum(sixes)", False),
     "wides": ("sum(wides)", False),
     "noballs": ("sum(noballs)", False),
-    # True stats from the bowler's side: positive = better than an average bowler on the same balls.
+    # Net stats from the bowler's side: positive = better than an average bowler on the same balls.
     "exp_runs": ("round(sum(exp_runs), 1)", False),
     "runs_saved": ("round(sum(exp_runs) - sum(runs), 1)", True),
     "exp_economy": ("round(6.0 * sum(exp_runs) / nullif(sum(balls), 0), 2)", False),
-    "true_economy": ("round(6.0 * (sum(exp_runs) - sum(runs)) / nullif(sum(balls), 0), 2)", True),
+    "net_economy": ("round(6.0 * (sum(exp_runs) - sum(runs)) / nullif(sum(balls), 0), 2)", True),
     "exp_wickets": ("round(sum(exp_wkts), 1)", True),
-    "true_wickets": ("round(sum(wickets) - sum(exp_wkts), 1)", True),
+    "net_wickets": ("round(sum(wickets) - sum(exp_wkts), 1)", True),
     "exp_avg": ("round(sum(exp_runs) / nullif(sum(exp_wkts), 0), 2)", False),
-    "true_avg": ("round(sum(exp_runs) / nullif(sum(exp_wkts), 0) - sum(runs) / nullif(sum(wickets), 0), 2)", True),
+    "net_avg": ("round(sum(exp_runs) / nullif(sum(exp_wkts), 0) - sum(runs) / nullif(sum(wickets), 0), 2)", True),
     "exp_sr": ("round(sum(balls) / nullif(sum(exp_wkts), 0), 1)", False),
-    "true_sr": ("round(sum(balls) / nullif(sum(exp_wkts), 0) - sum(balls) / nullif(sum(wickets), 0), 1)", True),
-    "true_dot_pct": ("round(100.0 * (sum(dot) - sum(exp_dot)) / nullif(sum(balls), 0), 1)", True),
-    "true_boundary_pct": ("round(100.0 * (sum(exp_bnd) - sum(fours) - sum(sixes)) / nullif(sum(balls), 0), 1)", True),
+    "net_sr": ("round(sum(balls) / nullif(sum(exp_wkts), 0) - sum(balls) / nullif(sum(wickets), 0), 1)", True),
+    "net_dot_pct": ("round(100.0 * (sum(dot) - sum(exp_dot)) / nullif(sum(balls), 0), 1)", True),
+    "net_boundary_pct": ("round(100.0 * (sum(exp_bnd) - sum(fours) - sum(sixes)) / nullif(sum(balls), 0), 1)", True),
     # Win probability added (A1), in wins, from the bowling side's point of view.
     "wpa": ("round(sum(wpa), 2)", True),
     "wpa_per_match": ("round(sum(wpa) / nullif(count(DISTINCT match_id), 0), 3)", True),
@@ -144,14 +144,14 @@ DEFAULT_METRICS = {
     "team_bowling": ["innings", "runs", "balls", "wickets", "run_rate", "average", "dot_pct", "boundary_pct"],
 }
 RATE_METRICS = {"average", "strike_rate", "dot_pct", "boundary_pct", "balls_per_boundary", "economy",
-                "run_rate", "balls_per_wicket", "exp_sr", "true_sr", "exp_avg", "true_avg", "exp_economy",
-                "true_economy", "true_dot_pct", "true_boundary_pct"}
-# Shown for true stats: actual, expected, difference.
-TRUE_METRICS = {
-    "batting": ["innings", "balls", "runs", "exp_runs", "true_runs", "strike_rate", "exp_sr", "true_sr",
-                "average", "exp_avg", "true_avg"],
-    "bowling": ["innings", "balls", "wickets", "exp_wickets", "true_wickets", "economy", "exp_economy",
-                "true_economy", "runs_saved", "average", "exp_avg", "true_avg"],
+                "run_rate", "balls_per_wicket", "exp_sr", "net_sr", "exp_avg", "net_avg", "exp_economy",
+                "net_economy", "net_dot_pct", "net_boundary_pct"}
+# Shown for net stats: actual, expected, difference.
+NET_METRICS = {
+    "batting": ["innings", "balls", "runs", "exp_runs", "net_runs", "strike_rate", "exp_sr", "net_sr",
+                "average", "exp_avg", "net_avg"],
+    "bowling": ["innings", "balls", "wickets", "exp_wickets", "net_wickets", "economy", "exp_economy",
+                "net_economy", "runs_saved", "average", "exp_avg", "net_avg"],
 }
 
 # role: (source view, extra predicate, metric catalogue)
@@ -185,8 +185,8 @@ SHRINK_COMPONENTS: dict[str, dict[str, tuple[str, str]]] = {
         "dpb": ("sum(out)", "sum(faced)"),
         "dot": ("sum(dot)", "sum(faced)"),
         "bnd": ("sum(fours) + sum(sixes)", "sum(faced)"),
-        "true_rpb": ("sum(runs) - sum(exp_runs)", "sum(faced)"),
-        "true_dpb": ("sum(out) - sum(exp_out)", "sum(faced)"),
+        "net_rpb": ("sum(runs) - sum(exp_runs)", "sum(faced)"),
+        "net_dpb": ("sum(out) - sum(exp_out)", "sum(faced)"),
         "exp_rpb": ("sum(exp_runs)", "sum(faced)"),
         "exp_dpb": ("sum(exp_out)", "sum(faced)"),
     },
@@ -194,8 +194,8 @@ SHRINK_COMPONENTS: dict[str, dict[str, tuple[str, str]]] = {
         "rpb": ("sum(runs)", "sum(balls)"),
         "wpb": ("sum(wickets)", "sum(balls)"),
         "dot": ("sum(dot)", "sum(balls)"),
-        "true_rpb": ("sum(exp_runs) - sum(runs)", "sum(balls)"),
-        "true_wpb": ("sum(wickets) - sum(exp_wkts)", "sum(balls)"),
+        "net_rpb": ("sum(exp_runs) - sum(runs)", "sum(balls)"),
+        "net_wpb": ("sum(wickets) - sum(exp_wkts)", "sum(balls)"),
     },
 }
 UNSHRUNK_COMPONENTS = {"exp_rpb", "exp_dpb"}
@@ -212,9 +212,9 @@ SHRUNK_METRICS: dict[str, dict[str, tuple[list[str], object, bool]]] = {
         "average_shrunk": (["rpb", "dpb"], lambda r, n: _div(r["rpb"], r["dpb"]), True),
         "dot_pct_shrunk": (["dot"], lambda r, n: 100 * r["dot"], False),
         "boundary_pct_shrunk": (["bnd"], lambda r, n: 100 * r["bnd"], True),
-        "true_sr_shrunk": (["true_rpb"], lambda r, n: 100 * r["true_rpb"], True),
-        "true_avg_shrunk": (["true_rpb", "true_dpb", "exp_rpb", "exp_dpb"],
-                            lambda r, n: _div(r["exp_rpb"] + r["true_rpb"], r["exp_dpb"] + r["true_dpb"])
+        "net_sr_shrunk": (["net_rpb"], lambda r, n: 100 * r["net_rpb"], True),
+        "net_avg_shrunk": (["net_rpb", "net_dpb", "exp_rpb", "exp_dpb"],
+                            lambda r, n: _div(r["exp_rpb"] + r["net_rpb"], r["exp_dpb"] + r["net_dpb"])
                             - _div(r["exp_rpb"], r["exp_dpb"]), True),
     },
     "bowling": {
@@ -222,11 +222,11 @@ SHRUNK_METRICS: dict[str, dict[str, tuple[list[str], object, bool]]] = {
         "average_shrunk": (["rpb", "wpb"], lambda r, n: _div(r["rpb"], r["wpb"]), False),
         "strike_rate_shrunk": (["wpb"], lambda r, n: _div(1, r["wpb"]), False),
         "dot_pct_shrunk": (["dot"], lambda r, n: 100 * r["dot"], True),
-        "true_economy_shrunk": (["true_rpb"], lambda r, n: 6 * r["true_rpb"], True),
-        "true_wickets_shrunk": (["true_wpb"], lambda r, n: r["true_wpb"] * n, True),
+        "net_economy_shrunk": (["net_rpb"], lambda r, n: 6 * r["net_rpb"], True),
+        "net_wickets_shrunk": (["net_wpb"], lambda r, n: r["net_wpb"] * n, True),
     },
 }
-RATE_METRICS |= {m for role in SHRUNK_METRICS.values() for m in role if m != "true_wickets_shrunk"}
+RATE_METRICS |= {m for role in SHRUNK_METRICS.values() for m in role if m != "net_wickets_shrunk"}
 
 
 def _shrunk_rate(num, den, k: float, mu):

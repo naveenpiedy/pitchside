@@ -5,7 +5,7 @@ views stitch them together, so every analysis is written once against:
 
 - v_balls : every non-super-over delivery, with match context, attributes
             of the batter (hand) and bowler (type, subtype, arm), and the
-            per-ball expectations behind true stats (model/baselines.py)
+            per-ball expectations behind net stats (model/baselines.py)
 - v_bat   : batting facts, one row per ball faced plus one row per non-striker
             dismissal, keyed by `player_id` = the batter
 - v_bowl  : bowling facts, one row per delivery, keyed by `player_id` = the bowler

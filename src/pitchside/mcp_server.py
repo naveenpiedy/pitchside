@@ -24,18 +24,18 @@ Workflow:
 1. overview tells you what is loaded. grammar lists filter keys, split dimensions and metric names.
 2. Resolve names first when unsure: find_player / find_team / find_venue (codes like RCB work).
    Pass player_id when a name is ambiguous.
-3. Prefer the analysis tools (player_profile, player_splits, true_stats, compare_players, leaderboard,
+3. Prefer the analysis tools (player_profile, player_splits, net_stats, compare_players, leaderboard,
    team_profile, head_to_head, venue_profile, team_ranking, scorecard). Each takes `filters`, an object
    such as {"season": "2023+", "phase": "death", "bowl_type": "spin"}.
 4. For anything else, use query: one read-only SELECT over the v_* views (describe_schema shows them
    and the values a column holds). Aggregate in SQL; rows are capped. For multi-step work, save
    intermediate results with scratch_save and query scratch.<name> later. For bulk data, use export,
    which writes a file and returns only its path.
-5. Small samples: prefer the *_shrunk metrics (e.g. true_sr_shrunk) to rank players with uneven balls.
+5. Small samples: prefer the *_shrunk metrics (e.g. net_sr_shrunk) to rank players with uneven balls.
 6. Match-winning impact: wpa (win probability added, in wins) is a metric everywhere; mvp and match_impact
-   summarise it. true_* measure efficiency vs an average player; wpa measures effect on results.
+   summarise it. net_* measure efficiency vs an average player; wpa measures effect on results.
 
-True stats (true_*) compare each ball with what an average player in the same competition would produce
+Net stats (net_*) compare each ball with what an average player in the same competition would produce
 in the same situation (over, season, wickets down, setting/chasing, ground, rules era). Positive = better than
 average; exp_* is the expectation. Results flag small samples (low < 30 balls, small < 120): treat them
 as noise.
@@ -64,16 +64,16 @@ TOOLS: dict[str, tuple[Callable, str, ToolAnnotations]] = {
     # analysis
     "player_profile": (tools.player_profile,
                        "Full profile: overall and by season, phase, pace/spin, bowling subtype, position, "
-                       "setting/chasing, plus true stats by season and phase. Batting and bowling.", READ_ONLY),
+                       "setting/chasing, plus net stats by season and phase. Batting and bowling.", READ_ONLY),
     "player_splits": (tools.player_splits,
                       "One player's batting or bowling split by any dimensions (by), under filters, with chosen "
                       "metrics.", READ_ONLY),
-    "true_stats": (tools.true_stats, "A player's true stats: actual, expected and the difference, split by `by`.",
+    "net_stats": (tools.net_stats, "A player's net stats: actual, expected and the difference, split by `by`.",
                    READ_ONLY),
     "compare_players": (tools.compare_players,
                         "Players side by side under identical filters, optionally split by dimensions.", READ_ONLY),
     "leaderboard": (tools.leaderboard,
-                    "Players ranked by any metric (incl. true_*), with a ball minimum; `per` gives top N within each "
+                    "Players ranked by any metric (incl. net_*), with a ball minimum; `per` gives top N within each "
                     "season/phase/etc. Role inferred for bowling-only metrics.", READ_ONLY),
     "team_profile": (tools.team_profile,
                      "Team results by season and opponent, phase batting/bowling, bowling by type, batting depth.",

@@ -3,7 +3,7 @@
 #   event     : info.event.name in the match files, used to pick matches out of
 #               the shared recently-added zips during sync
 #   status    : "ongoing" (synced) or "ended" (frozen)
-#   rule_eras : first seasons of new playing-condition eras; true-stat wicket and
+#   rule_eras : first seasons of new playing-condition eras; net-stat wicket and
 #               setting/chasing factors are estimated separately within each era
 
 [ipl]

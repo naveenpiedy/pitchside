@@ -1,6 +1,6 @@
 # pitchside
 
-A local cricket analytics engine. It loads [Cricsheet](https://cricsheet.org) ball-by-ball data into DuckDB, one database per competition, and answers questions about it: splits, comparisons, leaderboards, team and venue profiles, **true stats** (performance against what an average player would have done on the same balls), small-sample-aware rankings, win probability and match impact.
+A local cricket analytics engine. It loads [Cricsheet](https://cricsheet.org) ball-by-ball data into DuckDB, one database per competition, and answers questions about it: splits, comparisons, leaderboards, team and venue profiles, **net stats** (performance against what an average player would have done on the same balls), small-sample-aware rankings, win probability and match impact.
 
 Everything is computed on your machine. An AI client (Claude, Cursor, anything that speaks MCP) can drive it through tools that return small, finished tables, so the model reasons over answers instead of raw data.
 
@@ -36,7 +36,7 @@ Each command prints a small table. Names can be partial (`Kohli`), codes work fo
 uv run pitchside player "SA Yadav" -f season=2023+
 ```
 
-Overall line, archetype, then splits by season, phase, pace vs spin, bowling subtype, position, entry point, setting vs chasing, and true stats by season and phase.
+Overall line, archetype, then splits by season, phase, pace vs spin, bowling subtype, position, entry point, setting vs chasing, and net stats by season and phase.
 
 **Any split, any filters**
 
@@ -46,19 +46,19 @@ uv run pitchside splits "SA Yadav" --by entry_bucket -f season=2023+
 uv run pitchside compare "SA Yadav" Klaasen Pooran -f bowl_type=spin -f season=2024+
 ```
 
-**True stats**: actual, expected (an average player on the same balls), difference
+**Net stats**: actual, expected (an average player on the same balls), difference
 
 ```bash
-uv run pitchside true Kohli --by season -f season=2022+
-uv run pitchside true Bumrah -r bowling --by phase -f season=2023+
+uv run pitchside net Kohli --by season -f season=2022+
+uv run pitchside net Bumrah -r bowling --by phase -f season=2023+
 ```
 
 **Leaderboards**: any metric, any filters; `*_shrunk` metrics handle small samples
 
 ```bash
-uv run pitchside leaders true_sr -f season=2026 --min-balls 200
-uv run pitchside leaders true_sr_shrunk -f season=2026
-uv run pitchside leaders true_economy_shrunk -f phase=death -f season=2025+
+uv run pitchside leaders net_sr -f season=2026 --min-balls 200
+uv run pitchside leaders net_sr_shrunk -f season=2026
+uv run pitchside leaders net_economy_shrunk -f phase=death -f season=2025+
 uv run pitchside leaders runs --per season -n 1
 ```
 
@@ -124,30 +124,30 @@ Lists use commas (`bowl_subtype=OB,LB`). Splits group by dimensions (`--by seaso
 
 Results flag small samples (`low` under 30 balls, `small` under 120) and are cached until new data arrives.
 
-### True stats
+### Net stats
 
-Raw numbers mislead because of when players bat and bowl: a 150 strike rate is excellent in the middle overs and ordinary at the death. True stats compare every ball with what an average player in the same competition would produce in the same situation:
+Raw numbers mislead because of when players bat and bowl: a 150 strike rate is excellent in the middle overs and ordinary at the death. Net stats compare every ball with what an average player in the same competition would produce in the same situation:
 
 - the competition's scoring level for that **over in that season** (so 2010 and 2026 are each judged against their own era),
 - adjusted for **wickets down** and **setting vs chasing**,
 - and for how **settled the batter is** (balls 1–5, 6–10, 11+ at the crease), so late arrivals aren't judged against set batters,
 - with the adjustments estimated separately per **rules era** (`rule_eras` in `tournaments.toml`; the IPL changes in 2023 with the Impact Player rule).
 
-Positive is always better than average, and every true stat sums to zero across the league. Each comes with its expectation (`exp_*`) so you can see both.
+Positive is always better than average, and every net stat sums to zero across the league. Each comes with its expectation (`exp_*`) so you can see both.
 
 | Batting | Bowling |
 |---|---|
-| `true_sr`, `true_avg`, `true_runs`, `outs_saved`, `true_dot_pct`, `true_boundary_pct` | `true_economy`, `runs_saved`, `true_wickets`, `true_avg`, `true_sr`, `true_dot_pct`, `true_boundary_pct` |
+| `net_sr`, `net_avg`, `net_runs`, `outs_saved`, `net_dot_pct`, `net_boundary_pct` | `net_economy`, `runs_saved`, `net_wickets`, `net_avg`, `net_sr`, `net_dot_pct`, `net_boundary_pct` |
 
 `uv run pitchside baselines ipl -t bat_runs -p death` shows the adjustment factors.
 
 ### Small samples (`*_shrunk`)
 
-A 30-ball hot streak shouldn't top a leaderboard. Every rate has a shrunk version that pulls a player towards the average (under the same filters) by *k* balls of prior evidence, with *k* estimated from the data for each rate: about 160 balls for true strike rate, but over 1,000 for wicket-taking, which is mostly noise in T20. Use them to rank players with uneven samples: `strike_rate_shrunk`, `average_shrunk`, `true_sr_shrunk`, `true_avg_shrunk`, `economy_shrunk`, `true_economy_shrunk`, `true_wickets_shrunk`, and more.
+A 30-ball hot streak shouldn't top a leaderboard. Every rate has a shrunk version that pulls a player towards the average (under the same filters) by *k* balls of prior evidence, with *k* estimated from the data for each rate: about 160 balls for net strike rate, but over 1,000 for wicket-taking, which is mostly noise in T20. Use them to rank players with uneven samples: `strike_rate_shrunk`, `average_shrunk`, `net_sr_shrunk`, `net_avg_shrunk`, `economy_shrunk`, `net_economy_shrunk`, `net_wickets_shrunk`, and more.
 
 ### Win probability and WPA
 
-Two models per competition (first innings and chase), fitted on its own history, give each side's chance of winning before every ball. A ball's **WPA** (win probability added) is the change it causes, in wins: batters earn it on balls they face, bowlers the opposite on balls they bowl. `wpa` and `wpa_per_match` work as metrics everywhere; `mvp` and `impact` summarise them. True stats measure efficiency; WPA measures effect on results. `uv run pitchside winprob ipl` shows the model and how well calibrated it is.
+Two models per competition (first innings and chase), fitted on its own history, give each side's chance of winning before every ball. A ball's **WPA** (win probability added) is the change it causes, in wins: batters earn it on balls they face, bowlers the opposite on balls they bowl. `wpa` and `wpa_per_match` work as metrics everywhere; `mvp` and `impact` summarise them. Net stats measure efficiency; WPA measures effect on results. `uv run pitchside winprob ipl` shows the model and how well calibrated it is.
 
 ### Archetypes
 
@@ -190,14 +190,14 @@ Player names resolve by exact name, then a clear favourite by activity, then kno
 - *Which batters do best when walking in during overs 7–10?*
 - *How did the 2024 IPL final swing, and who won it for KKR?*
 - *What's the par first-innings score at the Chinnaswamy recently, and do teams chase there?*
-- *Is Kohli an anchor? Show his true strike rate by phase over the last three seasons.*
+- *Is Kohli an anchor? Show his net strike rate by phase over the last three seasons.*
 
 **Tools**
 
 | Group | Tools |
 |---|---|
 | Discovery | `overview`, `grammar`, `describe_schema`, `find_player`, `find_team`, `find_venue`, `find_matches` |
-| Players | `player_profile`, `player_splits`, `true_stats`, `compare_players`, `leaderboard`, `archetypes` |
+| Players | `player_profile`, `player_splits`, `net_stats`, `compare_players`, `leaderboard`, `archetypes` |
 | Teams and matches | `prematch_brief`, `team_profile`, `head_to_head`, `venue_profile`, `team_ranking`, `scorecard`, `mvp`, `match_impact` |
 | SQL | `query` (one read-only SELECT, 50 rows by default), `export` (full result to `data/exports/`, only the path comes back) |
 | Scratch | `scratch_save`, `scratch_list`, `scratch_drop`: named tables that persist across calls, readable from `query` as `scratch.<name>` |
@@ -219,7 +219,7 @@ uv run pitchside schedule remove
 
 `sync` downloads Cricsheet's recently-added matches (or a competition's full archive if it hasn't synced for 25+ days), loads only matches from tracked competitions (re-running is harmless; corrected matches are replaced), rebuilds everything derived, fetches attributes for new players and runs the quality checks. The scheduled job logs to `data/logs/sync.log` and runs late if the PC was off. Competitions marked `status = "ended"` are never re-synced.
 
-Quality checks fail if totals don't reconcile (innings vs deliveries, scorecards vs totals), chase targets are wrong, limits are broken or true-stat baselines aren't zero-sum; they warn about umpire-miscounted overs, new team or venue names (add them to `aliases.toml`) and players missing attributes.
+Quality checks fail if totals don't reconcile (innings vs deliveries, scorecards vs totals), chase targets are wrong, limits are broken or net-stat baselines aren't zero-sum; they warn about umpire-miscounted overs, new team or venue names (add them to `aliases.toml`) and players missing attributes.
 
 ---
 
@@ -260,7 +260,7 @@ The CSV is local only (gitignored); keep a copy if you've filled rows by hand.
 |---|---|
 | `load <comp>` / `register` / `attributes fetch\|reload\|missing` | Build the data |
 | `info`, `find <name>`, `filters` | What's loaded, name lookup, filter/metric reference |
-| `player`, `splits`, `true`, `compare`, `leaders`, `archetypes` | Player analysis |
+| `player`, `splits`, `net`, `compare`, `leaders`, `archetypes` | Player analysis |
 | `brief`, `team`, `h2h`, `venue`, `team-rank` | Pre-match brief, team and ground analysis |
 | `mvp`, `impact <match_id>`, `scorecard <comp> <match_id>` | Impact and matches |
 | `sync`, `check`, `schedule install\|status\|remove` | Keeping data current |
@@ -274,8 +274,8 @@ Every command has `--help`.
 ## Limitations
 
 - **T20 only** for now; ODI support needs its own baselines.
-- **No ball-tracking data**: Cricsheet has no line, length or speed, so true stats know the situation but not the quality of each delivery.
-- **Wicket-taking is noisy**: shrunk true wickets show little separation between bowlers in a season, which is a property of T20 data, not a bug.
+- **No ball-tracking data**: Cricsheet has no line, length or speed, so net stats know the situation but not the quality of each delivery.
+- **Wicket-taking is noisy**: shrunk net wickets show little separation between bowlers in a season, which is a property of T20 data, not a bug.
 - **WPA credits batters and bowlers only**: fielding isn't credited, and a run-out is charged to the striker on that ball.
 - **Bowling style is one label per career**: players who changed style (seam to spin) aren't modelled.
 - **Washouts without a ball bowled** aren't in Cricsheet, so a few seasons have fewer matches than scheduled.
@@ -289,7 +289,7 @@ uv run pytest                       # unit tests + IPL integration tests (skippe
 ```
 
 - `src/pitchside/etl/` — download, parse, load, sync, quality checks, attributes, schedule
-- `src/pitchside/model/` — schema, derived tables, true-stat baselines, shrinkage priors, win probability
+- `src/pitchside/model/` — schema, derived tables, net-stat baselines, shrinkage priors, win probability
 - `src/pitchside/engine.py` — query engine over every loaded competition
 - `src/pitchside/stats/` — filters, splits/aggregation, players, teams, archetypes, impact, scorecards
 - `src/pitchside/tools.py`, `mcp_server.py` — AI tools and the MCP server

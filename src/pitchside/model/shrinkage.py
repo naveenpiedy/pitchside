@@ -30,13 +30,13 @@ COMPONENTS: dict[tuple[str, str], tuple[str, str]] = {
     ("batting", "dpb"): ("coalesce(out_player_id = batter_id, false)::INT", "is_ball_faced::INT"),
     ("batting", "dot"): ("(is_ball_faced AND runs_batter = 0)::INT", "is_ball_faced::INT"),
     ("batting", "bnd"): ("(is_four OR is_six)::INT", "is_ball_faced::INT"),
-    ("batting", "true_rpb"): ("runs_batter - exp_bat_runs", "is_ball_faced::INT"),
-    ("batting", "true_dpb"): ("coalesce(out_player_id = batter_id, false)::INT - exp_bat_out", "is_ball_faced::INT"),
+    ("batting", "net_rpb"): ("runs_batter - exp_bat_runs", "is_ball_faced::INT"),
+    ("batting", "net_dpb"): ("coalesce(out_player_id = batter_id, false)::INT - exp_bat_out", "is_ball_faced::INT"),
     ("bowling", "rpb"): ("bowler_runs", "is_legal::INT"),
     ("bowling", "wpb"): ("is_bowler_wicket::INT", "is_legal::INT"),
     ("bowling", "dot"): ("(is_legal AND bowler_runs = 0)::INT", "is_legal::INT"),
-    ("bowling", "true_rpb"): ("exp_bowl_runs - bowler_runs", "is_legal::INT"),
-    ("bowling", "true_wpb"): ("is_bowler_wicket::INT - exp_bowl_wkt", "is_legal::INT"),
+    ("bowling", "net_rpb"): ("exp_bowl_runs - bowler_runs", "is_legal::INT"),
+    ("bowling", "net_wpb"): ("is_bowler_wicket::INT - exp_bowl_wkt", "is_legal::INT"),
 }
 
 

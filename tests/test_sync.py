@@ -49,7 +49,7 @@ def test_sync_from_recent_zip(ongoing, mini_match, tmp_path):
     results = sync_mod.sync(recent_zip=recent, fetch_attributes=False, log=lambda m: None)
     r = results[0]
     assert (r.competition, r.source, r.added, r.updated) == ("test", "recent", 1, 1)
-    assert not r.failed and {c.name for c in r.checks} >= {"innings_totals", "true_stat_baselines", "bowling_types"}
+    assert not r.failed and {c.name for c in r.checks} >= {"innings_totals", "net_stat_baselines", "bowling_types"}
 
     again = sync_mod.sync(recent_zip=recent, fetch_attributes=False, log=lambda m: None)[0]
     assert (again.added, again.updated, again.data_version) == (0, 0, r.data_version)  # idempotent

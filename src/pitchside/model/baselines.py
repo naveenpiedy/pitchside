@@ -1,4 +1,4 @@
-"""Per-ball expectations for true stats.
+"""Per-ball expectations for net stats.
 
 For every delivery we estimate what an average player in the same competition
 would produce, for eight targets: the batter's runs, dismissal, dot and
@@ -13,13 +13,13 @@ boundary chances, and the bowler's runs, wicket, dot and boundary chances.
 2. factor  : how much better or worse than the over's level the same situation
              is, given wickets down (each of 0-7, then 8+) and setting vs chasing.
              Coarser buckets (0-2, 3-4...) left openers ~+10 and No. 3s ~-8 in
-             true SR, so each wicket gets its own factor.
+             net SR, so each wicket gets its own factor.
              Estimated within each rules era (tournaments.toml `rule_eras`,
              e.g. IPL 2023 Impact Player) and per phase so cells stay large,
              then shrunk towards 1 by PRIOR_BALLS of pseudo-data.
    settle  : a second factor for how many balls the striker has already faced
              (1-5 new, 6-10 getting in, 11+ set), per rules era and phase.
-             Without it a batter's first five balls run ~18 true-SR points
+             Without it a batter's first five balls run ~18 net-SR points
              below expectation, so late arrivals (finishers) read low and
              bowlers look better against new batters. It stops at 11+ on
              purpose: batters who reach 30 or 40 balls are disproportionately
@@ -34,7 +34,7 @@ boundary chances, and the bowler's runs, wicket, dot and boundary chances.
              equals the actual total. The factors and the rescale alternate
              (iterative proportional fitting) so expectations match actuals on
              every margin: situation cells, settle cells and season-overs. The
-             last step is always the rescale, so true stats sum to exactly zero
+             last step is always the rescale, so net stats sum to exactly zero
              per season and over, and an "average" player scores 0.
 
 Overs of shortened innings are mapped onto the full-length scale (`eff_over`)

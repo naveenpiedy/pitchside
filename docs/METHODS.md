@@ -7,7 +7,7 @@ Every formula behind the numbers, what slice of data each piece is estimated on,
 1. [How data is sliced](#1-how-data-is-sliced)
 2. [Counting rules](#2-counting-rules)
 3. [Standard metrics](#3-standard-metrics)
-4. [True stats](#4-true-stats)
+4. [Net stats](#4-net-stats)
 5. [Small-sample shrinkage](#5-small-sample-shrinkage-_shrunk)
 6. [Win probability and WPA](#6-win-probability-and-wpa)
 7. [Entry point](#7-entry-point)
@@ -22,7 +22,7 @@ Every formula behind the numbers, what slice of data each piece is estimated on,
 
 There are two kinds of calculation, and the difference matters for reading any number.
 
-**Models, fitted once per competition when data loads.** The true-stat baselines, the shrinkage priors and the win-probability models are each estimated from one competition's full history (all IPL seasons for the IPL) and stored in that competition's database. They are rebuilt on every load or sync, never per query. The IPL is judged against the IPL; a BBL, once loaded, against the BBL.
+**Models, fitted once per competition when data loads.** The net-stat baselines, the shrinkage priors and the win-probability models are each estimated from one competition's full history (all IPL seasons for the IPL) and stored in that competition's database. They are rebuilt on every load or sync, never per query. The IPL is judged against the IPL; a BBL, once loaded, against the BBL.
 
 **Metrics, computed per query over whatever slice you ask for.** Every ball already carries its expectations (expected runs, expected dismissal, win probability before and after) from the models above. A metric is then a sum over the balls matching your filters:
 
@@ -30,7 +30,7 @@ There are two kinds of calculation, and the difference matters for reading any n
 metric(slice) = f( Σ over balls in slice of actual values,  Σ over the same balls of expected values )
 ```
 
-So "true strike rate vs spin in the death overs, 2024–2026" sums actual runs and expected runs over exactly those balls. Nothing is re-fitted for the slice, and a "season" number is just the slice `season = 2024`. Any combination of filters (season, phase, opposition, venue, bowling type, entry point...) works the same way, for every metric in this document.
+So "net strike rate vs spin in the death overs, 2024–2026" sums actual runs and expected runs over exactly those balls. Nothing is re-fitted for the slice, and a "season" number is just the slice `season = 2024`. Any combination of filters (season, phase, opposition, venue, bowling type, entry point...) works the same way, for every metric in this document.
 
 ---
 
@@ -84,9 +84,9 @@ boundary_pct = 100 × (fours + sixes conceded) / balls
 
 ---
 
-## 4. True stats
+## 4. Net stats
 
-True stats compare each player with what an average player would have produced on **the same balls**: same competition, season, over, wickets down, innings, ground, and how settled the batter was. Positive always means better than average.
+Net stats compare each player with what an average player would have produced on **the same balls**: same competition, season, over, wickets down, innings, ground, and how settled the batter was. Positive always means better than average. The idea of judging players against an expectation for the same balls is inspired by the "true stats" of Jarrod Kimber and Good Areas; the model below is pitchside's own.
 
 ### 4.1 The expected value of each ball
 
@@ -115,7 +115,7 @@ factor(cell) = (Σ actual + 50 × r̄) / (Σ predicted + 50 × r̄)        r̄ =
 
 where "predicted" uses the current values of everything else. The 50 is a prior of 50 balls at factor 1, so thin cells (8+ wickets down in the death in one era) can't swing wildly. The last step is always the rescale, which guarantees the zero-sum property below.
 
-**Why the venue prior is 2,400 balls.** Half the balls at a ground are faced (and bowled) by the home side, so a ground's raw rate mixes the pitch with the home team's skill. Lightly shrunk, the venue factor would absorb that skill and erase it from the home players' true stats. With 2,400 pseudo-balls a ground keeps about half its observed effect after 10 matches and about 80% after 40. Example, IPL 2023+, batting runs: Chepauk 0.93, Ekana (Lucknow) 0.94, Wankhede 1.03, Chinnaswamy 1.02 (`pitchside baselines ipl` lists every ground).
+**Why the venue prior is 2,400 balls.** Half the balls at a ground are faced (and bowled) by the home side, so a ground's raw rate mixes the pitch with the home team's skill. Lightly shrunk, the venue factor would absorb that skill and erase it from the home players' net stats. With 2,400 pseudo-balls a ground keeps about half its observed effect after 10 matches and about 80% after 40. Example, IPL 2023+, batting runs: Chepauk 0.93, Ekana (Lucknow) 0.94, Wankhede 1.03, Chinnaswamy 1.02 (`pitchside baselines ipl` lists every ground).
 
 **Worked example: one ball.** IPL 2024, match 1422124, chase, ball 15.2 (2nd ball of the 16th over, the death). Kohli has faced 44 balls (settled), team 119/4 needing 58 off 29. Expected runs off the bat on this ball:
 
@@ -128,65 +128,65 @@ scale     (2024, over 16)                       × 0.9577
                                                 = 1.8706 expected runs
 ```
 
-He hit Harshal Patel for 4, so this ball's contribution to his true runs is 4 − 1.87 = **+2.13**. His expected chance of dismissal on that ball was 0.0506.
+He hit Harshal Patel for 4, so this ball's contribution to his net runs is 4 − 1.87 = **+2.13**. His expected chance of dismissal on that ball was 0.0506.
 
-### 4.2 Batting true stats
+### 4.2 Batting net stats
 
 Over any slice, with `exp_runs`, `exp_out`, `exp_dot`, `exp_bnd` the sums of the per-ball expectations on the batter's balls faced:
 
 ```
 exp_sr            = 100 × exp_runs / balls
-true_sr           = 100 × (runs − exp_runs) / balls                     = strike_rate − exp_sr
+net_sr           = 100 × (runs − exp_runs) / balls                     = strike_rate − exp_sr
 exp_avg           = exp_runs / exp_out
-true_avg          = runs / outs − exp_runs / exp_out                    = average − exp_avg
-true_runs         = runs − exp_runs
+net_avg          = runs / outs − exp_runs / exp_out                    = average − exp_avg
+net_runs         = runs − exp_runs
 outs_saved        = exp_out − outs
-true_dot_pct      = 100 × (exp_dot − dots) / balls                      (+ = fewer dots than expected)
-true_boundary_pct = 100 × (fours + sixes − exp_bnd) / balls
+net_dot_pct      = 100 × (exp_dot − dots) / balls                      (+ = fewer dots than expected)
+net_boundary_pct = 100 × (fours + sixes − exp_bnd) / balls
 ```
 
 The dismissal expectation per ball counts any dismissal on that ball (including a non-striker run-out), so that league-wide expected outs equal actual outs.
 
 **Worked example: Kohli, IPL 2024 season** (slice: `player = Kohli, season = 2024`):
 
-| | Actual | Expected | True |
+| | Actual | Expected | Net |
 |---|---|---|---|
-| Runs, balls | 741 off 479 | 778.6 | true_runs = 741 − 778.6 = **−37.6** |
-| Strike rate | 100 × 741/479 = 154.70 | 100 × 778.6/479 = 162.54 | true_sr = **−7.84** |
+| Runs, balls | 741 off 479 | 778.6 | net_runs = 741 − 778.6 = **−37.6** |
+| Strike rate | 100 × 741/479 = 154.70 | 100 × 778.6/479 = 162.54 | net_sr = **−7.84** |
 | Outs | 12 | 24.0 | outs_saved = **+12.0** |
-| Average | 741/12 = 61.75 | 778.6/24.0 = 32.51 | true_avg = **+29.24** |
+| Average | 741/12 = 61.75 | 778.6/24.0 = 32.51 | net_avg = **+29.24** |
 
-Reading: he scored slower than an average batter would have on his balls (−7.8 per 100 balls), but was dismissed half as often as expected, so his average was 29 runs better than par. That's the classic anchor profile. Before the venue factor his true SR read −5.5: half his innings were at Chinnaswamy, and the extra runs that ground gives everyone were being credited to him.
+Reading: he scored slower than an average batter would have on his balls (−7.8 per 100 balls), but was dismissed half as often as expected, so his average was 29 runs better than par. That's the classic anchor profile. Before the venue factor his net SR read −5.5: half his innings were at Chinnaswamy, and the extra runs that ground gives everyone were being credited to him.
 
-### 4.3 Bowling true stats
+### 4.3 Bowling net stats
 
 Over the bowler's balls, with expectations summed over every delivery they bowled (`exp_runs`, `exp_wkts`, ...):
 
 ```
 exp_economy       = 6 × exp_runs / balls
 runs_saved        = exp_runs − runs
-true_economy      = 6 × (exp_runs − runs) / balls                       = exp_economy − economy
-true_wickets      = wickets − exp_wkts
-true_avg          = exp_runs / exp_wkts − runs / wickets                (+ = cheaper wickets than expected)
-true_sr           = balls / exp_wkts − balls / wickets                  (+ = quicker wickets than expected)
-true_dot_pct      = 100 × (dots − exp_dot) / balls
-true_boundary_pct = 100 × (exp_bnd − fours − sixes) / balls
+net_economy      = 6 × (exp_runs − runs) / balls                       = exp_economy − economy
+net_wickets      = wickets − exp_wkts
+net_avg          = exp_runs / exp_wkts − runs / wickets                (+ = cheaper wickets than expected)
+net_sr           = balls / exp_wkts − balls / wickets                  (+ = quicker wickets than expected)
+net_dot_pct      = 100 × (dots − exp_dot) / balls
+net_boundary_pct = 100 × (exp_bnd − fours − sixes) / balls
 ```
 
 **Worked example: Bumrah, IPL 2024 season:**
 
-| | Actual | Expected | True |
+| | Actual | Expected | Net |
 |---|---|---|---|
 | Runs off 311 balls | 336 | 521.7 | runs_saved = **+185.7** |
-| Economy | 6 × 336/311 = 6.48 | 6 × 521.7/311 = 10.06 | true_economy = **+3.58** runs/over |
-| Wickets | 20 | 17.0 | true_wickets = **+3.0** |
-| Average | 336/20 = 16.80 | 521.7/17.0 = 30.6 | true_avg = **+13.8** |
-| Strike rate | 311/20 = 15.6 | 311/17.0 = 18.3 | true_sr = **+2.7** |
+| Economy | 6 × 336/311 = 6.48 | 6 × 521.7/311 = 10.06 | net_economy = **+3.58** runs/over |
+| Wickets | 20 | 17.0 | net_wickets = **+3.0** |
+| Average | 336/20 = 16.80 | 521.7/17.0 = 30.6 | net_avg = **+13.8** |
+| Strike rate | 311/20 = 15.6 | 311/17.0 = 18.3 | net_sr = **+2.7** |
 
 ### 4.4 Properties you can rely on
 
-- **Zero-sum.** Across all players in a season (and within every season–over), true runs, true outs, true dots and true boundaries sum to exactly zero, for batting and for bowling. An average player scores 0.
-- **Flat by situation.** League-wide, true stats are about 0 for every phase, wickets-down value, setting/chasing, balls-faced bucket and entry point. By ground they are close to 0 but not exactly, because the venue factor is shrunk: since 2023 Chepauk and Ekana still read about −3.5 true SR (−12 without the factor). Batting positions 9–11 stay negative, because tailenders really are worse batters.
+- **Zero-sum.** Across all players in a season (and within every season–over), net runs, net outs, net dots and net boundaries sum to exactly zero, for batting and for bowling. An average player scores 0.
+- **Flat by situation.** League-wide, net stats are about 0 for every phase, wickets-down value, setting/chasing, balls-faced bucket and entry point. By ground they are close to 0 but not exactly, because the venue factor is shrunk: since 2023 Chepauk and Ekana still read about −3.5 net SR (−12 without the factor). Batting positions 9–11 stay negative, because tailenders really are worse batters.
 - **Era-aware.** Because `level` is per season, a 2010 batter and a 2026 batter are each measured against their own season.
 
 Both properties are enforced by tests; `pitchside baselines ipl` shows the factors.
@@ -218,23 +218,23 @@ k   = σ² / τ²                  clamped to [20, 5000]
 | Batting runs per ball | 85 | | Bowling runs per ball | 93 |
 | Batting dot rate | 83 | | Bowling dot rate | 70 |
 | Batting boundary rate | 88 | | Bowling wicket rate | 1,417 |
-| Batting dismissal rate | 2,387 | | Bowling true runs per ball | 277 |
-| Batting true runs per ball | 177 | | Bowling true wickets per ball | 5,000 (cap) |
-| Batting true dismissals per ball | 1,083 | | | |
+| Batting dismissal rate | 2,387 | | Bowling net runs per ball | 277 |
+| Batting net runs per ball | 177 | | Bowling net wickets per ball | 5,000 (cap) |
+| Batting net dismissals per ball | 1,083 | | | |
 
-Dismissal and wicket rates need over 1,000 balls to become half-reliable: in T20 they are mostly noise, which is a property of the data. True wickets hit the cap: at season level, wicket-taking beyond what the situation explains is barely detectable.
+Dismissal and wicket rates need over 1,000 balls to become half-reliable: in T20 they are mostly noise, which is a property of the data. Net wickets hit the cap: at season level, wicket-taking beyond what the situation explains is barely detectable.
 
-**Which metrics.** Batting: `strike_rate_shrunk`, `average_shrunk` (shrunk runs per ball ÷ shrunk dismissals per ball), `dot_pct_shrunk`, `boundary_pct_shrunk`, `true_sr_shrunk`, `true_avg_shrunk`. Bowling: `economy_shrunk`, `average_shrunk`, `strike_rate_shrunk`, `dot_pct_shrunk`, `true_economy_shrunk`, `true_wickets_shrunk` (shrunk per-ball rate × balls). True stats shrink the *difference from expectation*; the expectation itself (the player's context) is never shrunk.
+**Which metrics.** Batting: `strike_rate_shrunk`, `average_shrunk` (shrunk runs per ball ÷ shrunk dismissals per ball), `dot_pct_shrunk`, `boundary_pct_shrunk`, `net_sr_shrunk`, `net_avg_shrunk`. Bowling: `economy_shrunk`, `average_shrunk`, `strike_rate_shrunk`, `dot_pct_shrunk`, `net_economy_shrunk`, `net_wickets_shrunk` (shrunk per-ball rate × balls). Net stats shrink the *difference from expectation*; the expectation itself (the player's context) is never shrunk.
 
-**Worked example: Kohli, 2024.** True runs −37.55 off 479 balls; the 2024 population true rate is 0 by construction; k = 177.2:
+**Worked example: Kohli, 2024.** Net runs −37.55 off 479 balls; the 2024 population net rate is 0 by construction; k = 177.2:
 
 ```
-true_sr_shrunk = 100 × (−37.55 + 177.2 × 0) / (479 + 177.2) = −5.72     (raw −7.84)
+net_sr_shrunk = 100 × (−37.55 + 177.2 × 0) / (479 + 177.2) = −5.72     (raw −7.84)
 ```
 
 **Small vs large sample, 2026:**
 
-| Player | Balls | True SR (raw) | True SR (shrunk) |
+| Player | Balls | Net SR (raw) | Net SR (shrunk) |
 |---|---|---|---|
 | Vaibhav Suryavanshi | 327 | +71.89 | **+46.62** |
 | Azmatullah Omarzai | 27 | +43.80 | **+5.79** |
@@ -322,7 +322,7 @@ wpa_per_match = total_wpa / matches played in the slice
 
 `match_impact` shows, for one match: the batting-first side's win probability at the end of each over, players' total WPA in that match, and the five balls with the largest |WPA|.
 
-**True stats vs WPA.** True stats measure efficiency against an average player on the same balls. WPA measures effect on the result, so a single in the last over of a tight chase is worth far more than a six at 200/2.
+**Net stats vs WPA.** Net stats measure efficiency against an average player on the same balls. WPA measures effect on the result, so a single in the last over of a tight chase is worth far more than a six at 200/2.
 
 ---
 
@@ -355,13 +355,13 @@ Rule-based, from these features over the slice (default minimums: 200 balls batt
 | top order | average entry over ≤ 6 |
 | middle order | otherwise |
 
-Style, from `true_sr_shrunk` and balls per innings:
+Style, from `net_sr_shrunk` and balls per innings:
 
 | Style | Rule |
 |---|---|
-| aggressor (Powerplay enforcer, Top-order / Middle-overs aggressor, Finisher) | true_sr_shrunk ≥ +8 |
-| anchor (Anchor opener, Top-order / Middle-order anchor) | true_sr_shrunk ≤ −5 **and** ≥ 18 balls per innings (slow but short isn't an anchor) |
-| finisher role, not aggressive | Lower-order hitter (true_sr_shrunk > −5) or Lower-order batter |
+| aggressor (Powerplay enforcer, Top-order / Middle-overs aggressor, Finisher) | net_sr_shrunk ≥ +8 |
+| anchor (Anchor opener, Top-order / Middle-order anchor) | net_sr_shrunk ≤ −5 **and** ≥ 18 balls per innings (slow but short isn't an anchor) |
+| finisher role, not aggressive | Lower-order hitter (net_sr_shrunk > −5) or Lower-order batter |
 | otherwise | Opener / Top-order accumulator / Middle-order accumulator |
 
 **Bowlers.** Role from type and share of balls by phase, checked in this order (first match wins):
@@ -376,7 +376,7 @@ Style, from `true_sr_shrunk` and balls per innings:
 | Death-overs spinner | ≥ 20% at the death |
 | Middle-overs spinner | other spinners |
 
-Tagged *(economical)* if `true_economy_shrunk ≥ +0.5`, *(expensive)* if ≤ −0.5. The thresholds are constants in `src/pitchside/stats/archetypes.py`.
+Tagged *(economical)* if `net_economy_shrunk ≥ +0.5`, *(expensive)* if ≤ −0.5. The thresholds are constants in `src/pitchside/stats/archetypes.py`.
 
 ---
 
@@ -423,9 +423,9 @@ Composed entirely from the pieces above; nothing new is modelled.
 |---|---|
 | Recent | The last 3 seasons either team played, unless you pass a `season` filter |
 | Squad | Everyone who batted or bowled for the team in its last 10 matches (Cricsheet has no announced squads) |
-| Key batters | Top 4 of the squad by `true_runs` over the recent window (minimum 30 balls) |
+| Key batters | Top 4 of the squad by `net_runs` over the recent window (minimum 30 balls) |
 | Key bowlers | Top 4 by `runs_saved`, same window. Ranked by value above average rather than WPA, because over a few seasons WPA is too noisy. |
-| Style matchup | The six most-used batters of one side: balls, strike rate and `true_sr_shrunk` against pace and against spin, beside the other side's share of spin (% of its squad's recent balls) |
+| Style matchup | The six most-used batters of one side: balls, strike rate and `net_sr_shrunk` against pace and against spin, beside the other side's share of spin (% of its squad's recent balls) |
 | Head to heads | Batter v bowler pairings between the two squads with at least 12 balls, all seasons; the 8 with the most balls, each way |
 | Phase profile | Team batting run rate and bowling economy per phase, minus the league's run rate for the same phase and window |
 
@@ -441,7 +441,7 @@ Composed entirely from the pieces above; nothing new is modelled.
 | Shrinkage `k` | One competition, all player-seasons with 60+ balls | At load |
 | Win-probability model | One competition, all seasons; era context via season runs per ball | At load |
 | Shrinkage population rate `μ` | Your slice (same filters, all players) | Per query |
-| Every metric (standard, true, shrunk, WPA) | Your slice: sums over the balls matching your filters | Per query |
+| Every metric (standard, net, shrunk, WPA) | Your slice: sums over the balls matching your filters | Per query |
 | Sample flags | Your slice: `low` < 30 balls, `small` < 120 | Per query |
 
-Source files: `src/pitchside/etl/parse.py` (counting rules), `model/baselines.py` (true-stat expectations), `model/shrinkage.py` (priors), `model/winprob.py` (win probability), `stats/splits.py` (metric formulas), `stats/archetypes.py`, `stats/teams.py`, `stats/impact.py`, `stats/brief.py`.
+Source files: `src/pitchside/etl/parse.py` (counting rules), `model/baselines.py` (net-stat expectations), `model/shrinkage.py` (priors), `model/winprob.py` (win probability), `stats/splits.py` (metric formulas), `stats/archetypes.py`, `stats/teams.py`, `stats/impact.py`, `stats/brief.py`.

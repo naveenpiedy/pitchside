@@ -67,10 +67,10 @@ def _key_players(engine: Engine, team: str, squad: list[str], recent: dict) -> l
     # Ranked by value above an average player (volume), not WPA: over a few seasons WPA is too noisy
     # (a batter's clutch moments swing it more than his overall run-making).
     bat = aggregate(engine, "batting", recent, by=["player"], players=squad, min_balls=30,
-                    metrics=["innings", "runs", "strike_rate", "true_runs", "true_sr_shrunk", "wpa"],
-                    order_by="true_runs", limit=KEY_PLAYERS, title=f"{team}: key batters (recent, by true runs)")
+                    metrics=["innings", "runs", "strike_rate", "net_runs", "net_sr_shrunk", "wpa"],
+                    order_by="net_runs", limit=KEY_PLAYERS, title=f"{team}: key batters (recent, by net runs)")
     bowl = aggregate(engine, "bowling", recent, by=["player"], players=squad, min_balls=30,
-                     metrics=["innings", "wickets", "economy", "runs_saved", "true_economy_shrunk", "wpa"],
+                     metrics=["innings", "wickets", "economy", "runs_saved", "net_economy_shrunk", "wpa"],
                      order_by="runs_saved", limit=KEY_PLAYERS, title=f"{team}: key bowlers (recent, by runs saved)")
     return [_drop_team(bat), _drop_team(bowl)]
 
@@ -97,16 +97,16 @@ def _style_matchup(engine: Engine, bat_team: str, bat_squad: list[str], bowl_tea
     ids = [engine.resolve_player(n) for n in top]
     split = {(r["player"], r["bowl_type"]): r for r in aggregate(
         engine, "batting", recent, by=["player", "bowl_type"], players=ids,
-        metrics=["balls", "strike_rate", "true_sr_shrunk"]).records()}
+        metrics=["balls", "strike_rate", "net_sr_shrunk"]).records()}
     rows = []
     for name in top:
         p, s = split.get((name, "pace"), {}), split.get((name, "spin"), {})
-        rows.append([name, p.get("balls"), p.get("strike_rate"), p.get("true_sr_shrunk"),
-                     s.get("balls"), s.get("strike_rate"), s.get("true_sr_shrunk")])
-    return Table(["batter", "balls_v_pace", "sr_v_pace", "true_sr_v_pace", "balls_v_spin", "sr_v_spin",
-                  "true_sr_v_spin"], rows,
+        rows.append([name, p.get("balls"), p.get("strike_rate"), p.get("net_sr_shrunk"),
+                     s.get("balls"), s.get("strike_rate"), s.get("net_sr_shrunk")])
+    return Table(["batter", "balls_v_pace", "sr_v_pace", "net_sr_v_pace", "balls_v_spin", "sr_v_spin",
+                  "net_sr_v_spin"], rows,
                  title=f"{bat_team} batters v {bowl_team}'s attack ({spin_share}% of its recent balls are spin)",
-                 notes=["true_sr_*: shrunk true strike rate (runs per 100 balls above an average batter)"])
+                 notes=["net_sr_*: shrunk net strike rate (runs per 100 balls above an average batter)"])
 
 
 def _head_to_heads(engine: Engine, bat_squad: list[str], bowl_squad: list[str], title: str) -> Table:
@@ -114,7 +114,7 @@ def _head_to_heads(engine: Engine, bat_squad: list[str], bowl_squad: list[str], 
     if not bat_squad or not bowl_squad:
         return Table(["batter"], [], title=title)
     t = aggregate(engine, "batting", {"bowler": bowl_squad}, by=["player", "bowler"], players=bat_squad,
-                  metrics=["balls", "runs", "outs", "strike_rate", "true_sr"], min_balls=MATCHUP_MIN_BALLS,
+                  metrics=["balls", "runs", "outs", "strike_rate", "net_sr"], min_balls=MATCHUP_MIN_BALLS,
                   order_by="balls", limit=8, title=title)
     t.notes.append(f"all seasons; pairs with at least {MATCHUP_MIN_BALLS} balls")
     return _drop_team(t)

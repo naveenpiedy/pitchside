@@ -272,22 +272,22 @@ def winprob_cmd(tournament: str) -> None:
         con.close()
 
 
-@app.command("true")
-def true_cmd(
+@app.command("net")
+def net_cmd(
     name: str,
     role: str = ROLE_OPT,
     by: str = typer.Option("season", "--by", "-b", help="Comma-separated dimensions"),
     comp: list[str] = COMP_OPT,
     filter: list[str] = FILTER_OPT,
 ) -> None:
-    """True stats for a player: actual, expected (average player, same balls) and the difference."""
+    """Net stats for a player: actual, expected (average player, same balls) and the difference."""
     with _engine(comp) as e:
-        _show(pl.true_stats(e, name, role, _csv(by), parse_cli_filters(filter)))
+        _show(pl.net_stats(e, name, role, _csv(by), parse_cli_filters(filter)))
 
 
 @app.command()
 def rebuild(tournament: str) -> None:
-    """Recompute derived tables and true-stat baselines (e.g. after changing rule_eras)."""
+    """Recompute derived tables and net-stat baselines (e.g. after changing rule_eras)."""
     t = get_tournament(tournament)
     con = connect(t.db_path)
     try:
@@ -304,7 +304,7 @@ def baselines(
                                help="bat_runs bat_out bat_dot bat_bnd bowl_runs bowl_wkt bowl_dot bowl_bnd"),
     phase: str = typer.Option(None, "--phase", "-p"),
 ) -> None:
-    """Inspect true-stat factors: situation (wickets down x setting/chasing) and settle (balls already faced),
+    """Inspect net-stat factors: situation (wickets down x setting/chasing) and settle (balls already faced),
     per rules era and phase, and venue (per rules era and ground)."""
     con = connect(get_tournament(tournament).db_path, read_only=True)
     try:
@@ -433,7 +433,7 @@ def sync_cmd(
 
 @app.command()
 def check(tournaments: list[str] = typer.Argument(None, help="Competition key(s); default all loaded")) -> None:
-    """Data-quality checks: totals reconcile, targets, limits, ids, true-stat baselines, names, attributes."""
+    """Data-quality checks: totals reconcile, targets, limits, ids, net-stat baselines, names, attributes."""
     from pitchside.etl.sync import check_competition
 
     keys = tournaments or [k for k, t in load_tournaments().items() if t.db_path.exists()]

@@ -10,7 +10,7 @@ For each competition marked `status = "ongoing"` in tournaments.toml:
    idempotent: matches already loaded at the same revision are skipped and
    revised ones replaced.
 2. Load (filtered to the competition's event name), refreshing derived tables
-   and true-stat baselines and bumping data_version (which invalidates caches).
+   and net-stat baselines and bumping data_version (which invalidates caches).
 3. If new matches arrived: refresh the Cricsheet register and fetch batting
    hand / bowling style for new players.
 4. Run the data-quality checks.

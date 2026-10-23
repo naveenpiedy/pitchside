@@ -78,12 +78,12 @@ def test_discovery_tools(mini_tools):
     assert "Reds|" in mini_tools.find_team("RD")
     assert "Test Ground, Testville|" in mini_tools.find_venue("test")
     assert "1|2025-04-01|Reds|Blues" in mini_tools.find_matches(team="Reds")
-    assert "true_sr" in mini_tools.grammar()
+    assert "net_sr" in mini_tools.grammar()
 
 
 def test_analysis_tools(mini_tools):
-    assert "## A3 batting by season" in mini_tools.true_stats("A3")
-    assert "true_wickets" in mini_tools.leaderboard("true_wickets")
+    assert "## A3 batting by season" in mini_tools.net_stats("A3")
+    assert "net_wickets" in mini_tools.leaderboard("net_wickets")
     assert "Reds: results by season" in mini_tools.team_profile("Reds")
     assert "Reds v Blues" in mini_tools.head_to_head("Reds", "Blues")
     assert "Test Ground, Testville: overview" in mini_tools.venue_profile("Test Ground")

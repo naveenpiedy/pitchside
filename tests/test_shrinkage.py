@@ -32,19 +32,19 @@ def test_shrunk_metrics_follow_the_formula(mini_engine):
 
 
 def test_ranking_by_shrunk_metric(mini_engine):
-    t = aggregate(mini_engine, "batting", by=["player"], metrics=["balls", "true_sr", "true_sr_shrunk"],
-                  order_by="true_sr_shrunk", limit=2)
-    values = [r["true_sr_shrunk"] for r in t.records()]
+    t = aggregate(mini_engine, "batting", by=["player"], metrics=["balls", "net_sr", "net_sr_shrunk"],
+                  order_by="net_sr_shrunk", limit=2)
+    values = [r["net_sr_shrunk"] for r in t.records()]
     assert len(values) == 2 and values == sorted(values, reverse=True)
     assert any("k=" in n for n in t.notes)
-    lb = pl.leaderboard(mini_engine, "true_economy_shrunk", min_balls=1)  # bowling inferred
-    assert "true_economy_shrunk" in lb.columns and "wickets" in lb.columns
+    lb = pl.leaderboard(mini_engine, "net_economy_shrunk", min_balls=1)  # bowling inferred
+    assert "net_economy_shrunk" in lb.columns and "wickets" in lb.columns
 
 
 def test_missing_priors_is_a_clear_error(mini_engine):
     mini_engine.priors = {}
     with pytest.raises(FilterError, match="rebuild"):
-        aggregate(mini_engine, "batting", metrics=["true_sr_shrunk"])
+        aggregate(mini_engine, "batting", metrics=["net_sr_shrunk"])
     # Metrics without shrinkage still work.
     assert aggregate(mini_engine, "batting", metrics=["runs"]).rows
 
@@ -55,13 +55,13 @@ def test_ipl_priors_are_plausible():
         pytest.skip("IPL database not loaded")
     with open_engine(["ipl"]) as e:
         k = e.priors
-        assert 50 < k[("batting", "true_rpb")] < 1000      # true SR half-reliable within a few hundred balls
+        assert 50 < k[("batting", "net_rpb")] < 1000      # net SR half-reliable within a few hundred balls
         assert k[("bowling", "wpb")] > 500                  # wicket-taking is far noisier
         assert k[("batting", "dot")] < k[("batting", "dpb")]  # dot % stabilises faster than dismissals
         # Shrinkage pulls a tiny sample further than a large one.
         t = aggregate(e, "batting", {"season": 2026}, by=["player"],
-                      metrics=["balls", "true_sr", "true_sr_shrunk"], min_balls=20).records()
-        small = [r for r in t if r["balls"] < 40 and r["true_sr"] is not None]
+                      metrics=["balls", "net_sr", "net_sr_shrunk"], min_balls=20).records()
+        small = [r for r in t if r["balls"] < 40 and r["net_sr"] is not None]
         large = [r for r in t if r["balls"] > 300]
-        ratio = lambda r: abs(r["true_sr_shrunk"]) / max(abs(r["true_sr"]), 1e-9)
+        ratio = lambda r: abs(r["net_sr_shrunk"]) / max(abs(r["net_sr"]), 1e-9)
         assert max(ratio(r) for r in small) < min(ratio(r) for r in large)

@@ -28,28 +28,28 @@ def test_entry_point_columns(mini_engine):
 
 def test_batting_archetype_rules():
     base = {"avg_entry_over": 1.0, "opener_share": 1.0, "death_share": 0.05, "balls_per_innings": 25.0}
-    assert ar.batting_archetype({**base, "true_sr_shrunk": 20}) == "Powerplay enforcer"
-    assert ar.batting_archetype({**base, "true_sr_shrunk": -10}) == "Anchor opener"
-    assert ar.batting_archetype({**base, "true_sr_shrunk": 0}) == "Opener"
+    assert ar.batting_archetype({**base, "net_sr_shrunk": 20}) == "Powerplay enforcer"
+    assert ar.batting_archetype({**base, "net_sr_shrunk": -10}) == "Anchor opener"
+    assert ar.batting_archetype({**base, "net_sr_shrunk": 0}) == "Opener"
     finisher = {"avg_entry_over": 15.0, "opener_share": 0, "death_share": 0.6, "balls_per_innings": 10.0}
-    assert ar.batting_archetype({**finisher, "true_sr_shrunk": 12}) == "Finisher"
-    assert ar.batting_archetype({**finisher, "true_sr_shrunk": -10}) == "Lower-order batter"
+    assert ar.batting_archetype({**finisher, "net_sr_shrunk": 12}) == "Finisher"
+    assert ar.batting_archetype({**finisher, "net_sr_shrunk": -10}) == "Lower-order batter"
     middle = {"avg_entry_over": 9.0, "opener_share": 0, "death_share": 0.25, "balls_per_innings": 12.0}
     # Slow but short innings is not an anchor.
-    assert ar.batting_archetype({**middle, "true_sr_shrunk": -10}) == "Middle-order accumulator"
-    assert ar.batting_archetype({**middle, "true_sr_shrunk": 10}) == "Middle-overs aggressor"
+    assert ar.batting_archetype({**middle, "net_sr_shrunk": -10}) == "Middle-order accumulator"
+    assert ar.batting_archetype({**middle, "net_sr_shrunk": 10}) == "Middle-overs aggressor"
 
 
 def test_bowling_archetype_rules():
-    f = {"bowl_type": "pace", "powerplay_share": 0.1, "death_share": 0.6, "true_economy_shrunk": 1.0}
+    f = {"bowl_type": "pace", "powerplay_share": 0.1, "death_share": 0.6, "net_economy_shrunk": 1.0}
     assert ar.bowling_archetype(f) == "Death specialist (economical)"
     assert ar.bowling_archetype({**f, "powerplay_share": 0.6, "death_share": 0.1,
-                                 "true_economy_shrunk": -0.8}) == "New-ball seamer (expensive)"
+                                 "net_economy_shrunk": -0.8}) == "New-ball seamer (expensive)"
     assert ar.bowling_archetype({**f, "powerplay_share": 0.35, "death_share": 0.32}) == "All-phase seamer (economical)"
     assert ar.bowling_archetype({"bowl_type": "spin", "powerplay_share": 0.4, "death_share": 0.0,
-                                 "true_economy_shrunk": 0}) == "Powerplay spinner"
+                                 "net_economy_shrunk": 0}) == "Powerplay spinner"
     assert ar.bowling_archetype({"bowl_type": "unknown", "powerplay_share": 0.4, "death_share": 0.0,
-                                 "true_economy_shrunk": None}) == "Bowler (type unknown)"
+                                 "net_economy_shrunk": None}) == "Bowler (type unknown)"
 
 
 def test_archetypes_table(mini_engine):

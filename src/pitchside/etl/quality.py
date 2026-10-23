@@ -3,7 +3,7 @@
 Run after every load/sync and on demand (`pitchside check`). Each check
 returns ok / warn / fail:
 - fail: the data or derived tables contradict themselves (totals don't
-  reconcile, true stats aren't zero-sum). Analyses can't be trusted.
+  reconcile, net stats aren't zero-sum). Analyses can't be trusted.
 - warn: real-world quirks or gaps worth a look (umpire-miscounted overs,
   players without attributes, names not yet in aliases.toml).
 """
@@ -87,7 +87,7 @@ def run_checks(con: duckdb.DuckDBPyConnection, registry_attached: bool = False) 
         "every player has a Cricsheet registry id",
         "{n} players without a registry id (keyed by name):", level="warn")
 
-    # True stats baselines: exactly zero-sum per season.
+    # Net stats baselines: exactly zero-sum per season.
     tables = {r[0] for r in con.execute("SELECT table_name FROM duckdb_tables() WHERE schema_name = 'main'").fetchall()}
     if "expected" in tables:
         missing = _count(con, """SELECT count(*) FROM deliveries d JOIN innings i USING (match_id, innings_no)
@@ -104,13 +104,13 @@ def run_checks(con: duckdb.DuckDBPyConnection, registry_attached: bool = False) 
                 FROM deliveries d JOIN expected e USING (match_id, innings_no, seq) JOIN matches m USING (match_id)
                 GROUP BY 1)""").fetchone()[0] or 0
         if missing or worst > 1e-6:
-            checks.append(Check("true_stat_baselines", "fail",
+            checks.append(Check("net_stat_baselines", "fail",
                                 f"{missing} deliveries without expectations; worst season imbalance {worst:.6f} runs "
                                 "(run `pitchside rebuild`)"))
         else:
-            checks.append(Check("true_stat_baselines", "ok", "expectations cover every ball and are zero-sum per season"))
+            checks.append(Check("net_stat_baselines", "ok", "expectations cover every ball and are zero-sum per season"))
     else:
-        checks.append(Check("true_stat_baselines", "fail", "no `expected` table (run `pitchside rebuild`)"))
+        checks.append(Check("net_stat_baselines", "fail", "no `expected` table (run `pitchside rebuild`)"))
 
     # Names that may need an alias: raw team / venue names absent from aliases.toml.
     aliases = load_aliases()

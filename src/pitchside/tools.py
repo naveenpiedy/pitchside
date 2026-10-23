@@ -88,7 +88,7 @@ def overview() -> str:
                      meta.get("data_version"), meta.get("last_load")])
     table = Table(["competition", "name", "status", "seasons", "matches", "dates", "data_version", "last_load"], rows,
                   title="Loaded competitions",
-                  notes=["T20 only. Rules eras for true stats: " + "; ".join(
+                  notes=["T20 only. Rules eras for net stats: " + "; ".join(
                       f"{t.key} {list(t.rule_eras) or 'none'}" for t in config.load_tournaments().values())])
     return _render(table)
 
@@ -109,8 +109,8 @@ SCHEMA: dict[str, str] = {
     "{comp}.bowling_innings": "scorecard line per bowler per innings",
     "{comp}.season_batting": "per player per season batting totals",
     "{comp}.season_bowling": "per player per season bowling totals",
-    "{comp}.baseline_factors": "true-stat factors by target and kind (situation, settle, venue), era, phase, wickets_down, innings, venue",
-    "{comp}.baseline_levels": "true-stat level by target, season, over",
+    "{comp}.baseline_factors": "net-stat factors by target and kind (situation, settle, venue), era, phase, wickets_down, innings, venue",
+    "{comp}.baseline_levels": "net-stat level by target, season, over",
     "reg.player_attributes": "batting_hand, bowling_arm, bowling_style, bowl_type (pace/spin), bowl_subtype",
 }
 COLUMN_NOTES: dict[str, str] = {
@@ -121,7 +121,7 @@ COLUMN_NOTES: dict[str, str] = {
     "season_year": "year the season was played", "stage": "league / playoffs",
     "bowl_type": "pace / spin / unknown", "innings_no": "1 = first innings, 2 = chase",
     "wickets_before": "team wickets down before the ball", "balls_remaining": "legal balls left in the allocation",
-    "exp_runs": "expected runs for an average player in the same situation (true stats baseline)",
+    "exp_runs": "expected runs for an average player in the same situation (net stats baseline)",
     "out": "1 if this player was dismissed on this row",
 }
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
@@ -171,7 +171,7 @@ def grammar() -> str:
         + ". Each is pulled towards the average under the same filters by k balls of prior evidence "
         "(k estimated from the data per rate). Rank with these when samples are small or uneven.",
         "## team metrics (team_ranking): " + ", ".join(TEAM_BATTING_METRICS),
-        "## true stats: true_* = actual vs an average player on the same balls (situation-, era-adjusted); "
+        "## net stats: net_* = actual vs an average player on the same balls (situation-, era-adjusted); "
         "positive is always better; exp_* is the expectation.",
     ])
 
@@ -235,10 +235,10 @@ def player_splits(player: Player, role: Role = "batting", by: By = None, filters
         return _render(pl.splits(e, player, role, by, filters, metrics))
 
 
-def true_stats(player: Player, role: Role = "batting", by: By = None, filters: Filters = None,
+def net_stats(player: Player, role: Role = "batting", by: By = None, filters: Filters = None,
                competitions: Competitions = None) -> str:
     with _engine(competitions) as e:
-        return _render(pl.true_stats(e, player, role, by, filters))
+        return _render(pl.net_stats(e, player, role, by, filters))
 
 
 def compare_players(players: list[str], role: Role = "batting", by: By = None,

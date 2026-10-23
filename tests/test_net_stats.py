@@ -59,18 +59,18 @@ def test_rule_eras_split_factors(mini_engine, test_tournament):
     assert eras == {"2025+"}  # the only season is in the new era
 
 
-def test_true_metrics_and_tools(mini_engine):
-    row = aggregate(mini_engine, "batting", players=["a3"], metrics=["runs", "exp_runs", "true_runs", "true_sr"]).records()[0]
-    assert row["true_runs"] == pytest.approx(row["runs"] - row["exp_runs"], abs=0.1)
-    t = pl.true_stats(mini_engine, "A3")
-    assert {"strike_rate", "exp_sr", "true_sr"} <= set(t.columns)
-    assert pl.leaderboard(mini_engine, "true_wickets").columns[:2] == ["player", "team"]  # bowling role inferred
+def test_net_metrics_and_tools(mini_engine):
+    row = aggregate(mini_engine, "batting", players=["a3"], metrics=["runs", "exp_runs", "net_runs", "net_sr"]).records()[0]
+    assert row["net_runs"] == pytest.approx(row["runs"] - row["exp_runs"], abs=0.1)
+    t = pl.net_stats(mini_engine, "A3")
+    assert {"strike_rate", "exp_sr", "net_sr"} <= set(t.columns)
+    assert pl.leaderboard(mini_engine, "net_wickets").columns[:2] == ["player", "team"]  # bowling role inferred
     titles = [s.title for s in pl.profile(mini_engine, "B1")]
-    assert not any("true stats" in x for x in titles)  # B1 bowled 5 balls: breakdowns skipped
+    assert not any("net stats" in x for x in titles)  # B1 bowled 5 balls: breakdowns skipped
 
 
 @pytest.mark.integration
-def test_ipl_true_stats_zero_sum_and_flat():
+def test_ipl_net_stats_zero_sum_and_flat():
     t = get_tournament("ipl")
     if not t.db_path.exists():
         pytest.skip("IPL database not loaded")
@@ -86,21 +86,21 @@ def test_ipl_true_stats_zero_sum_and_flat():
                   "JOIN ipl.matches m USING (match_id) GROUP BY m.season_year, x.eff_over)").fetchone()[0]
         assert worst < 1e-6
 
-        # Situation-adjusted: league true SR is ~flat across wickets down and setting/chasing.
+        # Situation-adjusted: league net SR is ~flat across wickets down and setting/chasing.
         # (Wickets 8 and 9 share a factor, so only cells with real volume are checked.)
         # ball_bucket / entry_bucket: new and late-arriving batters aren't penalised for being new.
         for dim in ("wickets_down", "setting_chasing", "phase", "ball_bucket", "entry_bucket"):
-            league = aggregate(e, "batting", by=[dim], metrics=["balls", "true_sr"]).records()
-            assert all(abs(r["true_sr"]) < 3 for r in league if r["balls"] >= 5000), league
-            league = aggregate(e, "bowling", by=[dim], metrics=["balls", "true_economy"]).records()
-            assert all(abs(r["true_economy"]) < 0.3 for r in league if r["balls"] >= 5000), league
+            league = aggregate(e, "batting", by=[dim], metrics=["balls", "net_sr"]).records()
+            assert all(abs(r["net_sr"]) < 3 for r in league if r["balls"] >= 5000), league
+            league = aggregate(e, "bowling", by=[dim], metrics=["balls", "net_economy"]).records()
+            assert all(abs(r["net_economy"]) < 0.3 for r in league if r["balls"] >= 5000), league
 
         # Venue-adjusted: grounds are ~flat too. Looser than above because venue factors are shrunk
         # hard (VENUE_PRIOR_BALLS), so a ground keeps part of its effect; unadjusted, Chepauk 2023+ was ~-12.
-        league = aggregate(e, "batting", by=["venue"], metrics=["balls", "true_sr"]).records()
-        assert all(abs(r["true_sr"]) < 4 for r in league if r["balls"] >= 5000), league
-        league = aggregate(e, "bowling", by=["venue"], metrics=["balls", "true_economy"]).records()
-        assert all(abs(r["true_economy"]) < 0.3 for r in league if r["balls"] >= 5000), league
+        league = aggregate(e, "batting", by=["venue"], metrics=["balls", "net_sr"]).records()
+        assert all(abs(r["net_sr"]) < 4 for r in league if r["balls"] >= 5000), league
+        league = aggregate(e, "bowling", by=["venue"], metrics=["balls", "net_economy"]).records()
+        assert all(abs(r["net_economy"]) < 0.3 for r in league if r["balls"] >= 5000), league
 
         # Expectations follow the game: death overs expect more runs than the powerplay.
         sr = {r["phase"]: r["exp_sr"] for r in aggregate(e, "batting", by=["phase"], metrics=["exp_sr"]).records()}

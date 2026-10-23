@@ -11,7 +11,7 @@ def test_brief_sections(mini_engine):
     assert titles[0] == "Reds v Blues: all-time (Reds's record)"
     for expected in ("Reds: last 5 matches", "Blues: last 5 matches", "Test Ground, Testville: recent",
                      "Both teams at Test Ground, Testville (all-time)", "Reds: phase profile (recent)",
-                     "Reds: key batters (recent, by true runs)", "Blues: key bowlers (recent, by runs saved)",
+                     "Reds: key batters (recent, by net runs)", "Blues: key bowlers (recent, by runs saved)",
                      "Reds batters v Blues bowlers (head to head)"):
         assert expected in titles, expected
     # Squad tables are per team, so no 'latest team' column.
