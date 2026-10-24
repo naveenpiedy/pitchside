@@ -258,13 +258,15 @@ def impact_cmd(match_id: str, top: int = typer.Option(5, "--top", "-n"), comp: l
 
 @app.command("winprob")
 def winprob_cmd(tournament: str) -> None:
-    """Win-probability model: coefficients, fit and calibration (predicted vs actual by decile)."""
+    """Win-probability model: coefficients, fit and calibration (predicted vs actual by decile, and over
+    the last 12 balls of chases by runs needed per ball)."""
     con = connect(get_tournament(tournament).db_path, read_only=True)
     try:
         for title, sql in [
             ("Model", "SELECT innings, feature, round(coef, 4) AS coef, n, round(log_loss, 4) AS log_loss, "
                       "round(brier, 4) AS brier FROM winprob_model"),
             ("Calibration", "SELECT * FROM winprob_calibration"),
+            ("End of the chase", "SELECT * FROM winprob_endgame"),
         ]:
             cur = con.execute(sql)
             _show(Table([c[0] for c in cur.description], [list(r) for r in cur.fetchall()], title=title))

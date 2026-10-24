@@ -276,7 +276,7 @@ p = 1 / (1 + e^(−z)),   z = b₀ + Σ bⱼ xⱼ
 | log_balls | ln(balls left + 1) |
 | difficulty_x_wickets, difficulty_x_balls, wickets_x_balls | products |
 
-Outcomes: won 1, lost 0, tied 0.5 (even if a super over decided it); no-result matches are left out. Fitting: Newton's method on standardised features with a small ridge penalty (λ = 1). A chase whose target is already reached has p = 1.
+Outcomes: won 1, lost 0, tied 0.5 (even if a super over decided it); no-result matches are left out. Fitting: Newton's method on standardised features with a small ridge penalty (λ = 1). A chase whose target is already reached has p = 1. Over the last 24 balls of a chase the logistic value is blended into a ball-by-ball model (6.1.1).
 
 **Current IPL chase coefficients:** intercept 0.521, difficulty −3.837, wickets 10.387, log_balls −0.948, difficulty×wickets −2.043, difficulty×balls −0.095, wickets×balls −1.263. Fit: Brier score 0.138 for chases and 0.220 for first innings. Predicted and actual win rates agree within about 0.02 in almost every tenth of probability (`pitchside winprob ipl`).
 
@@ -292,6 +292,47 @@ p = 1 / (1 + e^0.228) = 0.443
 ```
 
 RCB's chance of winning before the ball: **44.3%**.
+
+### 6.1.1 The end of the chase
+
+A smooth curve can't see that a single ball is lumpy. To the logistic model, "2 off 1" is 2 per ball against a par of 1.4, only a little harder than usual, so it gave **0.94**. In fact the 26 IPL chases that faced 2 off the last ball scored 0.61 (11 won, 8 tied, 6 lost, the first time each faced it): the ball mostly brings a dot or a single, and a single only ties.
+
+So over the last **24 balls** of a chase the logistic value is blended into a ball-by-ball **Markov model** solved by backward induction:
+
+```
+V(b, w, r) = Σ over outcomes o   p(o | cell) × V(b − legal(o), w − wicket(o), r − runs(o))
+
+V(·, ·, r ≤ 0) = 1                    target reached
+V(0, ·, r) = V(·, 0, r) = 0.5 if r = 1 (scores level: a tie), else 0
+```
+
+`b` is legal balls left, `w` wickets in hand, `r` runs required. A wide or no-ball doesn't use a ball, so it is solved from states with fewer runs needed at the same `b`. Needing more than 6 a ball plus 8 counts as lost.
+
+**Outcome chances.** Every chase ball with 24 or fewer left is coded as (legal or not, runs, wicket). Runs off a legal ball are capped at 6, those on a wicket ball at 2, and extras' totals are grouped into 1, 2, 5 and 7. The balls are then counted per **cell**:
+
+| Cell dimension | Bands | Why |
+|---|---|---|
+| wickets in hand | 1-2, 3-4, 5-6, 7+ | deeper batting scores more, even with few balls left |
+| runs required per ball | ≤1, 1-1.5, 1.5-2, 2-3, >3 | shot choice follows the target |
+| balls left | 1, 2-6, 7-12, 13-24 | dots fall and boundaries rise as balls run out; on the last ball batters always run (IPL: 1 dot in 62 last balls needing up to 3 a ball, against about 20% four overs out) |
+
+Thin cells are shrunk down a chain, each level towards its parent with pseudo-balls: all window balls → (runs-per-ball, balls-left) pooled over wickets (50) → cell (50) → **rules era** (100) → **rules era at that ground** (240, about 10 chases' last four overs; heavy because home sides bowl half of them). The scoring era within a rules era enters only through the state itself.
+
+**Blend.** With `b` balls left, wp = m × Markov + (1 − m) × logistic, where m = clamp((24 − b) / 12, 0, 1). So the logistic value is used alone at 24 balls and above, the Markov value alone at 12 and below. Earlier balls and the chase's starting probability are unchanged, so the WPA properties in 6.2 still hold exactly.
+
+**Worked example: the 2019 final's last ball.** CSK 148/6 chasing 150: 2 off 1 with 4 wickets in hand. The cell is (3-4, 1.5-2, 1), before 2023:
+
+```
+win  : 2 (0.14) + 4 (0.12) + 6 (0.04) + no-ball/wide with 2+ runs (0.04)        = 0.34
+tie  : single (0.31) + run out going for the second, 1 run (0.06)  → 0.37 × ½   = 0.185
+wide : (0.02) → 1 off 1, worth 0.88                                               = 0.018
+lose : dot (0.10), out with no run (0.17)                                         = 0
+V = 0.34 + 0.185 + 0.018 = 0.54
+```
+
+The Hyderabad-specific cell also gives **0.54**. Thakur was lbw to Malinga and MI won by a run.
+
+**Calibration** (`pitchside winprob ipl`, table *End of the chase*): with 2-12 balls left, predicted and actual agree within about 0.03 when needing up to 2 a ball. The model is still **too low by 0.08-0.09 when needing 2-3 a ball**. Treating balls as independent misses hitting streaks: a set batter who has just hit a six is more likely to hit another. The same limitation is reported for exactly solvable T20 models elsewhere.
 
 ### 6.2 Win probability added (WPA)
 
@@ -441,6 +482,7 @@ Composed entirely from the pieces above; nothing new is modelled.
 | Per-ball expectation: venue factor | One competition, one rules era, one ground | At load |
 | Shrinkage `k` | One competition, all player-seasons with 60+ balls | At load |
 | Win-probability model | One competition, all seasons; era context via season runs per ball | At load |
+| End-of-chase ball outcomes | One competition's chase balls with ≤ 24 left; per rules era and ground, shrunk | At load |
 | Shrinkage population rate `μ` | Your slice (same filters, all players) | Per query |
 | Every metric (standard, net, shrunk, WPA) | Your slice: sums over the balls matching your filters | Per query |
 | Sample flags | Your slice: `low` < 30 balls, `small` < 120 | Per query |

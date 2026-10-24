@@ -160,6 +160,7 @@ STEPS = [SEASON_YEAR, BATTING_INNINGS, BOWLING_INNINGS, SEASON_BATTING, SEASON_B
 def refresh(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] = ()) -> None:
     for sql in STEPS:
         con.execute(sql)
-    build_expectations(con, rule_eras, load_aliases()["venues"])
+    venues = load_aliases()["venues"]
+    build_expectations(con, rule_eras, venues)
     build_priors(con)
-    build_winprob(con)
+    build_winprob(con, rule_eras, venues)

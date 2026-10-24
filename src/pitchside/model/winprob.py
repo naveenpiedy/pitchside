@@ -20,17 +20,44 @@ half won above an average replacement of the same balls.
 
 Fitted by Newton's method with the gradient and Hessian as DuckDB aggregates
 (small L2 penalty), so no numpy/scikit-learn dependency.
+
+End of the chase: a smooth logistic curve can't see that one ball is lumpy
+(needing 2 off 1 is mostly a dot or a single, not "2 per ball against a par of
+1.4"), so over the last MARKOV_BALLS it is blended into a ball-by-ball Markov
+model solved by backward induction. Per-ball outcome chances (dot, runs, extras,
+wicket) come from chase balls in that window, per wickets-in-hand band and
+runs-required-per-ball band, shrunk from all eras to the rules era to the
+rules era at that ground. The Markov value is used alone from BLEND_FULL
+balls left down, the logistic one from MARKOV_BALLS up, linearly in between.
 """
 
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 
 import duckdb
+import pyarrow as pa
+
+from pitchside.model.baselines import era_labels
 
 L2 = 1.0           # ridge penalty on standardised coefficients
 NEWTON_STEPS = 25
 TOLERANCE = 1e-8
+
+MARKOV_BALLS = 24        # last four overs of a chase are solved ball by ball
+BLEND_FULL = 12          # at or below this many balls left the Markov value is used alone
+GLOBAL_PRIOR = 50        # pseudo-balls pulling a (wickets, pressure) cell towards all window balls
+ERA_PRIOR = 100          # ... a rules-era cell towards the all-era cell
+VENUE_PRIOR = 240        # ... a ground's cell towards its era (~10 chases' last four overs; home sides
+                         # bowl half of them, so a light prior would absorb team skill)
+WICKET_BANDS = ["1-2", "3-4", "5-6", "7+"]               # wickets in hand
+# Balls left: in a live chase dots fall and boundaries rise as balls run out, and on the
+# last ball the batters always run (IPL: 1 dot in 62 live last balls vs ~20% four overs out).
+BALLS_EDGES = (1, 6, 12)
+BALLS_BANDS = ["1", "2-6", "7-12", "13-24"]
+PRESSURE_EDGES = (1.0, 1.5, 2.0, 3.0)                   # runs required per ball
+PRESSURE_BANDS = ["<=1", "1-1.5", "1.5-2", "2-3", ">3"]
 
 # Per-ball state, one row per non-super-over delivery of a decided or tied match.
 STATE_SQL = """
@@ -144,10 +171,157 @@ def fit_innings(con: duckdb.DuckDBPyConnection, innings: int) -> tuple[list[str]
     return names, raw, {"n": fit[0], "log_loss": fit[1], "brier": fit[2]}
 
 
-def build_winprob(con: duckdb.DuckDBPyConnection) -> None:
+def wicket_band(wkts_in_hand: int) -> int:
+    return min(max(wkts_in_hand - 1, 0) // 2, len(WICKET_BANDS) - 1)
+
+
+def pressure_band(runs_required: int, balls_left: int) -> int:
+    return sum(runs_required > e * balls_left for e in PRESSURE_EDGES)
+
+
+def balls_band(balls_left: int) -> int:
+    return sum(balls_left > e for e in BALLS_EDGES)
+
+
+# Chase balls in the Markov window with their outcome, coded the way the solver steps:
+# legal balls cost a ball, wides / no-balls don't; extras' runs are grouped so the state space stays small.
+OUTCOME_SQL = f"""
+SELECT {{era}} AS era, coalesce(va.canonical, m.venue, 'unknown') AS venue,
+       least(greatest(10 - d.wickets_before - 1, 0) // 2, {len(WICKET_BANDS) - 1}) AS wb,
+       {' + '.join(f'(d.runs_required > {e} * d.balls_remaining)::INT' for e in PRESSURE_EDGES)} AS pb,
+       {' + '.join(f'(d.balls_remaining > {e})::INT' for e in BALLS_EDGES)} AS bb,
+       d.is_legal AS legal,
+       CASE WHEN d.is_legal AND d.is_wicket THEN least(d.runs_total, 2)
+            WHEN d.is_legal THEN least(d.runs_total, 6)
+            WHEN d.runs_total <= 1 THEN 1 WHEN d.runs_total <= 3 THEN 2
+            WHEN d.runs_total <= 5 THEN 5 ELSE 7 END AS runs,
+       d.is_wicket AS wicket, count(*) AS n
+FROM deliveries d JOIN innings i USING (match_id, innings_no) JOIN matches m USING (match_id)
+LEFT JOIN _wp_venue_alias va ON va.name = m.venue
+WHERE d.innings_no = 2 AND NOT i.is_super_over AND d.runs_required > 0 AND d.wickets_before < 10
+  AND d.balls_remaining BETWEEN 1 AND {MARKOV_BALLS}
+GROUP BY ALL
+"""
+
+
+CELLS = [(wb, pb, bb) for wb in range(len(WICKET_BANDS)) for pb in range(len(PRESSURE_BANDS))
+         for bb in range(len(BALLS_BANDS))]
+
+
+def outcome_distributions(rows) -> tuple[dict, dict]:
+    """Shrunk outcome chances from rows of (era, venue, wb, pb, bb, legal, runs, wicket, n), cell = (wb, pb, bb).
+    Chain: all window balls -> (pressure, balls left) -> cell -> rules era -> rules era at the ground.
+    Returns ({(era, *cell): {outcome: p}}, {(era, venue, *cell): {outcome: p}})."""
+    def counter():
+        return defaultdict(lambda: defaultdict(float))
+    total, situation, cell, era_cell, venue_cell = defaultdict(float), counter(), counter(), counter(), counter()
+    for era, venue, wb, pb, bb, legal, runs, wicket, n in rows:
+        o = (bool(legal), int(runs), bool(wicket))
+        total[o] += n
+        situation[(pb, bb)][o] += n
+        cell[(wb, pb, bb)][o] += n
+        era_cell[(era, wb, pb, bb)][o] += n
+        venue_cell[(era, venue, wb, pb, bb)][o] += n
+
+    def shrink(counts, parent, prior):
+        n = sum(counts.values())
+        return {o: (counts.get(o, 0.0) + prior * p) / (n + prior) for o, p in parent.items()}
+
+    grand = sum(total.values())
+    if not grand:
+        return {}, {}
+    overall = {o: n / grand for o, n in total.items()}
+    by_situation = {(pb, bb): shrink(situation[(pb, bb)], overall, GLOBAL_PRIOR) for _, pb, bb in CELLS}
+    by_cell = {k: shrink(cell[k], by_situation[k[1:]], GLOBAL_PRIOR) for k in CELLS}
+    eras = {k[0] for k in era_cell}
+    by_era = {(era, *k): shrink(era_cell[(era, *k)], by_cell[k], ERA_PRIOR) for era in eras for k in CELLS}
+    grounds = {k[:2] for k in venue_cell}
+    by_venue = {(era, venue, *k): shrink(venue_cell[(era, venue, *k)], by_era[(era, *k)], VENUE_PRIOR)
+                for era, venue in grounds for k in CELLS}
+    return by_era, by_venue
+
+
+def solve_chase(probs, max_balls: int):
+    """Backward induction over chase states (balls left, wickets in hand, runs required).
+
+    `probs(wickets_in_hand, runs_required, balls_left)` returns [(legal, runs, wicket, p)].
+    Returns value(balls_left, wickets_in_hand, runs_required): the batting side's chance of winning,
+    a tie counting half. Needing more than 6 a ball plus 8 is treated as lost (the true value is negligible)."""
+    cap = [6 * b + 8 for b in range(max_balls + 1)]
+    table: list[list[list[float]]] = [[[] for _ in range(11)] for _ in range(max_balls + 1)]
+
+    def value(b: int, w: int, r: int) -> float:
+        if r <= 0:
+            return 1.0
+        if b <= 0 or w <= 0:
+            return 0.5 if r == 1 else 0.0
+        if r > cap[b]:
+            return 0.0
+        return table[b][w][r]
+
+    for b in range(1, max_balls + 1):
+        for w in range(1, 11):
+            row = table[b][w]
+            row.append(1.0)  # r = 0
+            for r in range(1, cap[b] + 1):
+                v = 0.0
+                for legal, runs, wicket, p in probs(w, r, b):
+                    # Same-b moves (wides, no-balls) always lower r, and wickets lower w, so they're solved already.
+                    v += p * value(b - legal, w - wicket, r - runs)
+                row.append(v)
+    return value
+
+
+def build_markov(con: duckdb.DuckDBPyConnection, rule_eras, venue_aliases) -> None:
+    """Markov chase values for every window ball (`_wp_markov`) and the era-level outcome
+    chances behind them (`winprob_outcomes`)."""
+    con.execute("CREATE OR REPLACE TEMP TABLE _wp_venue_alias (name VARCHAR PRIMARY KEY, canonical VARCHAR)")
+    if venue_aliases:
+        con.executemany("INSERT INTO _wp_venue_alias VALUES (?, ?)", list(venue_aliases.items()))
+    era = " + ".join(f"(m.season_year >= {int(y)})::INT" for y in sorted(rule_eras)) or "0"
+    by_era, by_venue = outcome_distributions(con.execute(OUTCOME_SQL.format(era=era)).fetchall())
+
+    states = con.execute(f"""
+        SELECT d.match_id, d.innings_no, d.seq, {era} AS era, coalesce(va.canonical, m.venue, 'unknown') AS venue,
+               d.balls_remaining, 10 - d.wickets_before, d.runs_required
+        FROM deliveries d JOIN innings i USING (match_id, innings_no) JOIN matches m USING (match_id)
+        LEFT JOIN _wp_venue_alias va ON va.name = m.venue
+        WHERE d.innings_no = 2 AND NOT i.is_super_over AND d.runs_required > 0 AND d.wickets_before < 10
+          AND d.balls_remaining BETWEEN 1 AND {MARKOV_BALLS}""").fetchall()
+    solvers, out = {}, {"match_id": [], "innings_no": [], "seq": [], "wp_markov": []}
+    for match_id, innings_no, seq, e, venue, b, w, r in states:
+        if (e, venue) not in solvers:
+            cells = {k: [(int(o[0]), o[1], int(o[2]), p)
+                         for o, p in (by_venue.get((e, venue, *k)) or by_era[(e, *k)]).items()] for k in CELLS}
+            solvers[(e, venue)] = solve_chase(
+                lambda w_, r_, b_, c=cells: c[(wicket_band(w_), pressure_band(r_, b_), balls_band(b_))], MARKOV_BALLS)
+        out["match_id"].append(match_id)
+        out["innings_no"].append(innings_no)
+        out["seq"].append(seq)
+        out["wp_markov"].append(solvers[(e, venue)](b, w, r))
+    schema = pa.schema([("match_id", pa.string()), ("innings_no", pa.int32()), ("seq", pa.int32()),
+                        ("wp_markov", pa.float64())])
+    con.register("_wp_markov_arrow", pa.table(out, schema=schema))
+    con.execute("CREATE OR REPLACE TEMP TABLE _wp_markov AS SELECT * FROM _wp_markov_arrow")
+    con.unregister("_wp_markov_arrow")
+
+    labels = era_labels(rule_eras)
+    con.execute("CREATE OR REPLACE TABLE winprob_outcomes (era VARCHAR, wickets_in_hand VARCHAR, "
+                "runs_per_ball VARCHAR, balls_left VARCHAR, legal BOOLEAN, runs INTEGER, wicket BOOLEAN, p DOUBLE)")
+    outcome_rows = [(labels[e] if e < len(labels) else str(e), WICKET_BANDS[wb], PRESSURE_BANDS[pb], BALLS_BANDS[bb],
+                     *o, p) for (e, wb, pb, bb), dist in sorted(by_era.items()) for o, p in sorted(dist.items())]
+    if outcome_rows:
+        con.executemany("INSERT INTO winprob_outcomes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", outcome_rows)
+    con.execute("DROP TABLE IF EXISTS _wp_venue_alias")
+
+
+def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | list[int] = (),
+                  venue_aliases: dict[str, str] | None = None) -> None:
     """(Re)build `winprob` (per delivery: wp_before, wp_after, wpa for the batting side),
-    `winprob_model` (coefficients and fit) and `winprob_calibration`."""
+    `winprob_model` (coefficients and fit), `winprob_outcomes` (end-of-chase ball outcome chances),
+    `winprob_calibration` and `winprob_endgame` (calibration over the last overs of chases)."""
     con.execute(STATE_SQL)
+    build_markov(con, rule_eras, venue_aliases)
     models = {}
     rows = []
     for innings in (1, 2):
@@ -159,14 +333,16 @@ def build_winprob(con: duckdb.DuckDBPyConnection) -> None:
     con.executemany("INSERT INTO winprob_model VALUES (?, ?, ?, ?, ?, ?)", rows)
 
     wp = {i: "1 / (1 + exp(-(" + _logit([sql for _, sql in FEATURES[i]], models[i]) + ")))" for i in (1, 2)}
+    markov_weight = f"least(greatest(({MARKOV_BALLS} - balls_left) / {MARKOV_BALLS - BLEND_FULL}, 0), 1)"
     con.execute(f"""
         CREATE OR REPLACE TABLE winprob AS
         WITH before AS (
             SELECT match_id, innings_no, seq, y,
                    CASE WHEN innings_no = 1 THEN {wp[1]}
                         WHEN runs_required <= 0 THEN 1.0
-                        ELSE {wp[2]} END AS wp_before
-            FROM _wp_state
+                        WHEN mk.wp_markov IS NULL THEN {wp[2]}
+                        ELSE {markov_weight} * mk.wp_markov + (1 - {markov_weight}) * {wp[2]} END AS wp_before
+            FROM _wp_state LEFT JOIN _wp_markov mk USING (match_id, innings_no, seq)
         ),
         chase_start AS (SELECT match_id, arg_min(wp_before, seq) AS wp FROM before WHERE innings_no = 2 GROUP BY 1),
         after AS (
@@ -186,5 +362,16 @@ def build_winprob(con: duckdb.DuckDBPyConnection) -> None:
                count(*) AS balls, round(avg(w.wp_before), 3) AS predicted, round(avg(s.y), 3) AS actual
         FROM winprob w JOIN _wp_state s USING (match_id, innings_no, seq)
         GROUP BY ALL ORDER BY 1, 2""")
-    for t in ("_wp_state", "_wp_train"):
+    # Deciles hide the last overs (few balls, big swings), so check them on their own.
+    pressure = " + ".join(f"(s.runs_required > {e} * s.balls_left)::INT" for e in PRESSURE_EDGES)
+    con.execute(f"""
+        CREATE OR REPLACE TABLE winprob_endgame AS
+        SELECT CASE WHEN s.balls_left = 1 THEN '1' WHEN s.balls_left <= 6 THEN '2-6' ELSE '7-12' END AS balls_left,
+               CASE {pressure} {' '.join(f"WHEN {i} THEN '{lab}'" for i, lab in enumerate(PRESSURE_BANDS))} END
+                   AS runs_per_ball,
+               count(*) AS balls, round(avg(w.wp_before), 3) AS predicted, round(avg(s.y), 3) AS actual
+        FROM winprob w JOIN _wp_state s USING (match_id, innings_no, seq)
+        WHERE s.innings_no = 2 AND s.runs_required > 0 AND s.balls_left BETWEEN 1 AND {BLEND_FULL}
+        GROUP BY ALL ORDER BY 1, 2""")
+    for t in ("_wp_state", "_wp_train", "_wp_markov"):
         con.execute(f"DROP TABLE IF EXISTS {t}")
