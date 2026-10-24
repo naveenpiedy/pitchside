@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/banner/pitchside-banner.png" alt="pitchside: every ball of the IPL 2019 final, won by one run off the last ball" width="100%"></p>
+<p align="center"><img src="docs/banner/pitchside-banner.png" alt="pitchside: every ball of the IPL 2023 final, won by CSK with a four off the last ball" width="100%"></p>
 
 # pitchside
 
