@@ -223,6 +223,12 @@ uv run pitchside schedule status
 uv run pitchside schedule remove
 ```
 
+`schedule` is **Windows only** (it registers a Task Scheduler job). `sync` itself works everywhere; on Linux or macOS, run it daily from cron (or launchd), for example:
+
+```bash
+0 9 * * * cd /path/to/pitchside && uv run pitchside sync >> data/logs/sync.log 2>&1
+```
+
 `sync` downloads Cricsheet's recently-added matches (or a competition's full archive if it hasn't synced for 25+ days), loads only matches from tracked competitions (re-running is harmless; corrected matches are replaced), rebuilds everything derived, fetches attributes for new players and runs the quality checks. The scheduled job logs to `data/logs/sync.log` and runs late if the PC was off. Competitions marked `status = "ended"` are never re-synced.
 
 Quality checks fail if totals don't reconcile (innings vs deliveries, scorecards vs totals), chase targets are wrong, limits are broken or net-stat baselines aren't zero-sum; they warn about umpire-miscounted overs, new team or venue names (add them to `aliases.toml`) and players missing attributes.
