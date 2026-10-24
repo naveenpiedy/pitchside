@@ -2,6 +2,8 @@
 
 # pitchside
 
+[![tests](https://github.com/naveenpiedy/pitchside/actions/workflows/tests.yml/badge.svg)](https://github.com/naveenpiedy/pitchside/actions/workflows/tests.yml)
+
 A local cricket analytics engine. It loads [Cricsheet](https://cricsheet.org) ball-by-ball data into DuckDB, one database per competition, and answers questions about it: splits, comparisons, leaderboards, team and venue profiles, **net stats** (performance against what an average player would have done on the same balls), small-sample-aware rankings, win probability and match impact.
 
 Everything is computed on your machine. An AI client (Claude, Cursor, anything that speaks MCP) can drive it through tools that return small, finished tables, so the model reasons over answers instead of raw data.
@@ -289,6 +291,8 @@ Every command has `--help`.
 ```bash
 uv run pytest                       # unit tests + IPL integration tests (skipped if IPL isn't loaded)
 ```
+
+GitHub Actions ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) runs the test suite on Ubuntu and Windows for every push to `master` and every pull request. CI has no Cricsheet data, so the IPL integration tests skip there: run `uv run pytest` locally with IPL loaded before merging changes to parsing, baselines or win probability.
 
 - `src/pitchside/etl/` — download, parse, load, sync, quality checks, attributes, schedule
 - `src/pitchside/model/` — schema, derived tables, net-stat baselines, shrinkage priors, win probability
