@@ -151,7 +151,9 @@ A 30-ball hot streak shouldn't top a leaderboard. Every rate has a shrunk versio
 
 ### Win probability and WPA
 
-Two models per competition (first innings and chase), fitted on its own history, give each side's chance of winning before every ball. A ball's **WPA** (win probability added) is the change it causes, in wins: batters earn it on balls they face, bowlers the opposite on balls they bowl. `wpa` and `wpa_per_match` work as metrics everywhere; `mvp` and `impact` summarise them. Net stats measure efficiency; WPA measures effect on results. `uv run pitchside winprob ipl` shows the model and how well calibrated it is.
+Two models per competition (first innings and chase), fitted on its own history, give each side's chance of winning before every ball. A ball's **WPA** (win probability added) is the change it causes, in wins: batters earn it on balls they face, bowlers the opposite on balls they bowl. `wpa` and `wpa_per_match` work as metrics everywhere; `mvp` and `impact` summarise them. Net stats measure efficiency; WPA measures effect on results.
+
+Over the last four overs of a chase, the chase model hands over to a ball-by-ball model. A smooth curve treats "2 off 1" as a required rate only a little above par and said 0.92; ball-by-ball, it's mostly a dot or a single, and the IPL chases that faced it scored about 0.6 (a tie counting half). The ball-by-ball model works backwards from the last ball, using per-ball outcome chances (dots, runs, extras, wickets) for that many wickets in hand, runs needed per ball and balls left, era and ground. `uv run pitchside winprob ipl` shows the model and how well calibrated it is, including the last 12 balls of chases.
 
 ### Archetypes
 
@@ -180,7 +182,7 @@ Player names resolve by exact name, then a clear favourite by activity, then kno
   "mcpServers": {
     "pitchside": {
       "command": "uv",
-      "args": ["--directory", "C:/Users/Snorlax/PycharmProjects/cricket_analysis", "run", "pitchside-mcp"]
+      "args": ["--directory", "/path/to/pitchside", "run", "pitchside-mcp"]
     }
   }
 }
@@ -281,6 +283,8 @@ Every command has `--help`.
 - **No ball-tracking data**: Cricsheet has no line, length or speed, so net stats know the situation but not the quality of each delivery.
 - **Wicket-taking is noisy**: shrunk net wickets show little separation between bowlers in a season, which is a property of T20 data, not a bug.
 - **WPA credits batters and bowlers only**: fielding isn't credited, and a run-out is charged to the striker on that ball.
+- **Late-chase win probability reads low when needing 2–3 a ball** (by about 0.08 with 2–12 balls left): the ball-by-ball model treats balls as independent, so it misses hitting streaks.
+- **Win probability doesn't know who is batting**: it uses wickets in hand, not the quality of the batters at the crease.
 - **Bowling style is one label per career**: players who changed style (seam to spin) aren't modelled.
 - **Washouts without a ball bowled** aren't in Cricsheet, so a few seasons have fewer matches than scheduled.
 
@@ -300,3 +304,11 @@ GitHub Actions ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) ru
 - `src/pitchside/stats/` — filters, splits/aggregation, players, teams, archetypes, impact, scorecards
 - `src/pitchside/tools.py`, `mcp_server.py` — AI tools and the MCP server
 - `AGENTS.md` — conventions and invariants for anyone (or any AI) changing the code
+
+---
+
+## Data and licence
+
+- Match data: [Cricsheet](https://cricsheet.org), released under the [Open Data Commons Attribution License](https://opendatacommons.org/licenses/by/1-0/). pitchside downloads it to your machine and doesn't redistribute it; anything you publish from it (tables, charts, blog posts) should credit Cricsheet.
+- Batting hand and bowling style: [Wikipedia](https://www.wikipedia.org) infoboxes (text under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)), found via [Wikidata](https://www.wikidata.org) and each player's Cricinfo id in Cricsheet's people register. Fetched to a local CSV, not redistributed.
+- Code: [MIT](LICENSE).
