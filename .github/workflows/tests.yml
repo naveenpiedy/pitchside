@@ -6,6 +6,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Tests only read the code; a pull request from a fork can't use this token to write anything.
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     # Integration tests skip here: they need the IPL database, which is rebuilt locally
@@ -19,6 +27,8 @@ jobs:
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
