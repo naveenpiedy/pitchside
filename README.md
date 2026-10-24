@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/banner/pitchside-banner.png" alt="pitchside: every ball of the IPL 2019 final, won by one run off the last ball" width="100%"></p>
+
 # pitchside
 
 A local cricket analytics engine. It loads [Cricsheet](https://cricsheet.org) ball-by-ball data into DuckDB, one database per competition, and answers questions about it: splits, comparisons, leaderboards, team and venue profiles, **net stats** (performance against what an average player would have done on the same balls), small-sample-aware rankings, win probability and match impact.
