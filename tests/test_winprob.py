@@ -94,6 +94,15 @@ def test_ipl_winprob_calibrated_and_consistent():
                   FROM w GROUP BY 1 HAVING count(DISTINCT innings_no) = 2)
             SELECT max(abs(total - (result - start))) FROM a""").fetchone()[0]
         assert worst < 1e-9
+        # The first innings' last ball doesn't absorb a model gap at the handover (it averaged -0.06).
+        last, n = q("""
+            WITH a AS (SELECT match_id, max(allocated_balls) FILTER (innings_no = 1) AS a1,
+                              max(allocated_balls) FILTER (innings_no = 2) AS a2 FROM ipl.innings GROUP BY 1),
+            l AS (SELECT w.match_id, arg_max(w.wpa, w.seq) AS wpa, arg_max(d.wickets_before + d.is_wicket::INT, w.seq) AS wk
+                  FROM ipl.winprob w JOIN ipl.deliveries d USING (match_id, innings_no, seq)
+                  WHERE w.innings_no = 1 GROUP BY 1)
+            SELECT avg(wpa), count(*) FROM l JOIN a USING (match_id) WHERE a1 = a2 AND wk < 10""").fetchone()
+        assert n > 500 and abs(last) < 0.01, last
         # The model knows a chase gets harder as the required rate rises (same balls and wickets).
         coef = dict(q("SELECT feature, coef FROM ipl.winprob_model WHERE innings = 2").fetchall())
         assert coef["difficulty"] < 0

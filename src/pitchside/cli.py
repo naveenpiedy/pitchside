@@ -259,7 +259,7 @@ def impact_cmd(match_id: str, top: int = typer.Option(5, "--top", "-n"), comp: l
 @app.command("winprob")
 def winprob_cmd(tournament: str) -> None:
     """Win-probability model: coefficients, fit and calibration (predicted vs actual by decile, and over
-    the last 12 balls of chases by runs needed per ball)."""
+    the last 12 balls of chases by runs needed per ball, and the first innings' handover to the chase)."""
     con = connect(get_tournament(tournament).db_path, read_only=True)
     try:
         for title, sql in [
@@ -267,6 +267,8 @@ def winprob_cmd(tournament: str) -> None:
                       "round(brier, 4) AS brier FROM winprob_model"),
             ("Calibration", "SELECT * FROM winprob_calibration"),
             ("End of the chase", "SELECT * FROM winprob_endgame"),
+            ("End of the first innings (last ball's WPA, ~0 when the handover is smooth)",
+             "SELECT * FROM winprob_handover"),
         ]:
             cur = con.execute(sql)
             _show(Table([c[0] for c in cur.description], [list(r) for r in cur.fetchall()], title=title))
