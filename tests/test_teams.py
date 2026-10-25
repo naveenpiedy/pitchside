@@ -31,6 +31,36 @@ def test_team_facts_both_sides(mini_engine):
         aggregate(mini_engine, "team_batting", by=["player"])
 
 
+SIDES_BY_INNINGS = """
+SELECT innings_no, side, team, opposition, sum(runs) FROM v_team
+GROUP BY innings_no, side, team, opposition ORDER BY innings_no, side
+"""
+# A CTE plus a window: the shape in which DuckDB 2.0's common_subplan gave the
+# bowling rows the batting side's team.
+SIDES_WINDOWED = """
+WITH t AS (SELECT team, side, innings_no, phase, sum(runs) r, sum(balls) b
+           FROM v_team WHERE innings_no <= 2 GROUP BY team, side, innings_no, phase)
+SELECT innings_no, side, team, sum(r), sum(sum(b)) OVER (PARTITION BY side)
+FROM t GROUP BY innings_no, side, team ORDER BY innings_no, side
+"""
+
+
+@pytest.mark.parametrize("optimizer", ["engine default", "common_subplan on"])
+def test_team_sides_are_opposite(mini_engine, optimizer):
+    q = mini_engine.con.execute
+    if optimizer == "common_subplan on":
+        q("RESET disabled_optimizers")
+    # Reds batted first (22 runs); MINI_MATCH's chase is a single ball for 1.
+    assert q(SIDES_BY_INNINGS).fetchall() == [
+        (1, "batting", "Reds", "Blues", 22), (1, "bowling", "Blues", "Reds", 22),
+        (2, "batting", "Blues", "Reds", 1), (2, "bowling", "Reds", "Blues", 1)]
+    rows = q(SIDES_WINDOWED).fetchall()
+    assert [r[:4] for r in rows] == [
+        (1, "batting", "Reds", 22), (1, "bowling", "Blues", 22),
+        (2, "batting", "Blues", 1), (2, "bowling", "Reds", 1)]
+    assert len({r[4] for r in rows}) == 1  # both sides saw the same balls
+
+
 def test_renamed_franchise_counts_as_one(build_engine, mini_match):
     e = build_engine({"1": mini_match, "2": rename_team(mini_match, "Reds", "Old Reds")})
     assert e.resolve_team("Old Reds") == e.resolve_team("RD") == "Reds"
@@ -82,6 +112,17 @@ def test_ipl_teams_and_venues():
             "SELECT (SELECT sum(runs) FROM v_team WHERE side = 'batting'),"
             " (SELECT sum(runs) FROM v_innings WHERE NOT is_super_over)").fetchone()
         assert team_runs == inn_runs
+        # The bowling side is the other team (once mixed up by DuckDB's common_subplan).
+        sides = e.con.execute("SELECT side, team, innings_no FROM v_team WHERE match_id = '1527676'"
+                              " GROUP BY side, team, innings_no ORDER BY innings_no, side").fetchall()
+        assert sides == [("batting", "Chennai Super Kings", 1), ("bowling", "Rajasthan Royals", 1),
+                         ("batting", "Rajasthan Royals", 2), ("bowling", "Chennai Super Kings", 2)]
+        mixed = e.con.execute("""
+            WITH t AS (SELECT match_id, innings_no, side, any_value(team) AS team FROM v_team
+                       WHERE season_year = 2026 GROUP BY ALL)
+            SELECT count(*) OVER () FROM t a JOIN t b USING (match_id, innings_no)
+            WHERE a.side = 'batting' AND b.side = 'bowling' AND a.team = b.team""").fetchall()
+        assert mixed == []
         wins, decided = e.con.execute(
             "SELECT (SELECT count(*) FROM v_results WHERE outcome = 'won'),"
             " (SELECT count(*) FROM v_matches WHERE winner IS NOT NULL)").fetchone()
