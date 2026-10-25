@@ -129,21 +129,24 @@ SELECT bowler_id AS player_id, {CONTEXT_COLS},
 FROM v_balls
 """
 
-TEAM_SIDE = """
-SELECT '{side}' AS side, {cols},
-       {team}_franchise AS team, {opp}_franchise AS opposition,
-       {team}_team AS team_name, {opp}_team AS opposition_name,
+# Each ball once per side. A CROSS JOIN rather than a UNION ALL of two
+# projections of v_balls: DuckDB 2.0's common_subplan optimizer merged those
+# branches and gave the bowling rows the batting side's team.
+V_TEAM = f"""
+CREATE OR REPLACE TEMP VIEW v_team AS
+SELECT s.side, {CONTEXT_COLS},
+       CASE s.side WHEN 'batting' THEN batting_franchise ELSE bowling_franchise END AS team,
+       CASE s.side WHEN 'batting' THEN bowling_franchise ELSE batting_franchise END AS opposition,
+       CASE s.side WHEN 'batting' THEN batting_team ELSE bowling_team END AS team_name,
+       CASE s.side WHEN 'batting' THEN bowling_team ELSE batting_team END AS opposition_name,
        batting_position AS position, batter_hand AS batting_hand,
        batter_balls_before + 1 AS nth_ball,
        runs_total AS runs, runs_extras AS extras, is_legal::INT AS balls,
        is_wicket::INT AS wickets, (is_legal AND runs_total = 0)::INT AS dot,
-       is_four::INT AS fours, is_six::INT AS sixes, {sign}wpa AS wpa
-FROM v_balls
+       is_four::INT AS fours, is_six::INT AS sixes,
+       CASE s.side WHEN 'batting' THEN wpa ELSE -wpa END AS wpa
+FROM v_balls CROSS JOIN (VALUES ('batting'), ('bowling')) s(side)
 """
-V_TEAM = ("CREATE OR REPLACE TEMP VIEW v_team AS "
-          + TEAM_SIDE.format(side="batting", team="batting", opp="bowling", cols=CONTEXT_COLS, sign="")
-          + " UNION ALL "
-          + TEAM_SIDE.format(side="bowling", team="bowling", opp="batting", cols=CONTEXT_COLS, sign="-"))
 
 # Outcome per team per match. innings_no = 1 if the team batted first, so the
 # `innings` (setting / chasing) filter works on results too.
@@ -347,6 +350,11 @@ def open_engine(competitions: list[str] | None = None, locked: bool = False,
 
     # `reg` exposes the registry tables, or empty stand-ins when it hasn't been built.
     con = duckdb.connect()
+    # DuckDB 2.0's common_subplan optimizer can merge UNION ALL branches over the
+    # same source and swap their columns (it did so to v_team); `query` runs
+    # arbitrary SQL, so keep it off for every query.
+    if con.execute("SELECT 1 FROM duckdb_optimizers() WHERE name = 'common_subplan'").fetchone():
+        con.execute("SET disabled_optimizers = 'common_subplan'")
     con.execute("ATTACH ':memory:' AS reg")
     tables: set[str] = set()
     if REGISTRY_DB.exists():
