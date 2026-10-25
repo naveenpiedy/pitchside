@@ -29,6 +29,13 @@ wicket) come from chase balls in that window, per wickets-in-hand band and
 runs-required-per-ball band, shrunk from all eras to the rules era to the
 rules era at that ground. The Markov value is used alone from BLEND_FULL
 balls left down, the logistic one from MARKOV_BALLS up, linearly in between.
+
+End of the first innings: the handover to 1 - the chase's start would otherwise put
+the gap between the two models on the last ball (the first-innings curve drifts
+upwards over the last overs, so that ball averaged -0.06). Over the last
+PROJECT_BALLS the logistic value is blended (alone from PROJECT_FULL down) into
+1 - the chase model's starting value averaged over the projected target: runs
+still to come ~ normal, with mean and spread per (balls left, wickets band).
 """
 
 from __future__ import annotations
@@ -59,6 +66,14 @@ BALLS_BANDS = ["1", "2-6", "7-12", "13-24"]
 PRESSURE_EDGES = (1.0, 1.5, 2.0, 3.0)                   # runs required per ball
 PRESSURE_BANDS = ["<=1", "1-1.5", "1.5-2", "2-3", ">3"]
 
+PROJECT_BALLS = 24       # over the last four overs of a first innings the value hands over to the chase model
+PROJECT_FULL = 12        # at or below this many balls left the projected value is used alone
+PROJECT_PRIOR = 50       # pseudo-innings pulling a (balls left, wickets band) cell towards its balls-left cell
+# Five-point Gauss-Hermite rule: E[f(X)] for X ~ N(0, 1) as Σ w·f(z) (probabilists' nodes, weights sum to 1).
+HERMITE = [(0.0, 8 / 15)] + [(s * z, w) for z, w in ((1.3556261799742659, 0.2220759220056126),
+                                                       (2.8569700138728056, 0.011257411327720691)) for s in (1, -1)]
+WICKET_BAND_SQL = f"least(greatest({{w}} - 1, 0) // 2, {len(WICKET_BANDS) - 1})"
+
 # Per-ball state, one row per non-super-over delivery of a decided or tied match.
 STATE_SQL = """
 CREATE OR REPLACE TEMP TABLE _wp_state AS
@@ -71,6 +86,7 @@ SELECT d.match_id, d.innings_no, d.seq,
        d.score_before::DOUBLE AS score, (10 - d.wickets_before)::DOUBLE AS wkts_in_hand,
        greatest(d.balls_remaining, 0)::DOUBLE AS balls_left, i.allocated_balls::DOUBLE AS allocation,
        d.runs_required::DOUBLE AS runs_required, sr.rpb,
+       max(d.score_before + d.runs_total) OVER (PARTITION BY d.match_id, d.innings_no)::DOUBLE AS final_score,
        CASE WHEN m.result = 'no result' OR m.result IS NULL THEN NULL
             WHEN m.result = 'tie' OR m.winner IS NULL THEN 0.5
             WHEN m.winner = i.batting_team THEN 1.0 ELSE 0.0 END AS y
@@ -315,6 +331,33 @@ def build_markov(con: duckdb.DuckDBPyConnection, rule_eras, venue_aliases) -> No
     con.execute("DROP TABLE IF EXISTS _wp_venue_alias")
 
 
+def build_projection(con: duckdb.DuckDBPyConnection) -> None:
+    """Runs still to come in a first innings, in units of the season's runs per ball, per (balls left,
+    wickets-in-hand band) over the last PROJECT_BALLS: mean and spread, each cell shrunk towards its
+    balls-left cell (`_wp_project`, and `winprob_projection` with band labels)."""
+    p = PROJECT_PRIOR
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE _wp_project AS
+        WITH obs AS (
+            SELECT balls_left::INT AS balls_left, {WICKET_BAND_SQL.format(w='wkts_in_hand::INT')} AS wb,
+                   (final_score - score) / rpb AS rest
+            FROM _wp_state WHERE innings_no = 1 AND y IS NOT NULL AND balls_left BETWEEN 1 AND {PROJECT_BALLS}),
+        parent AS (SELECT balls_left, avg(rest) AS m1, avg(rest * rest) AS m2 FROM obs GROUP BY 1),
+        cell AS (SELECT balls_left, wb, count(*) AS n, sum(rest) AS s1, sum(rest * rest) AS s2 FROM obs GROUP BY 1, 2),
+        shrunk AS (
+            SELECT p.balls_left, b.wb::INT AS wb, coalesce(c.n, 0) AS n,
+                   (coalesce(c.s1, 0) + {p} * p.m1) / (coalesce(c.n, 0) + {p}) AS mu,
+                   (coalesce(c.s2, 0) + {p} * p.m2) / (coalesce(c.n, 0) + {p}) AS m2
+            FROM parent p CROSS JOIN range({len(WICKET_BANDS)}) b(wb)
+            LEFT JOIN cell c ON c.balls_left = p.balls_left AND c.wb = b.wb)
+        SELECT balls_left, wb, n, mu, sqrt(greatest(m2 - mu * mu, 0)) AS sd FROM shrunk""")
+    con.execute(f"""
+        CREATE OR REPLACE TABLE winprob_projection AS
+        SELECT balls_left, list_extract({WICKET_BANDS!r}, wb + 1) AS wickets_in_hand, n AS innings,
+               round(mu, 3) AS mean_rest, round(sd, 3) AS sd_rest
+        FROM _wp_project ORDER BY balls_left, wb""")
+
+
 def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | list[int] = (),
                   venue_aliases: dict[str, str] | None = None) -> None:
     """(Re)build `winprob` (per delivery: wp_before, wp_after, wpa for the batting side),
@@ -322,6 +365,7 @@ def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | l
     `winprob_calibration` and `winprob_endgame` (calibration over the last overs of chases)."""
     con.execute(STATE_SQL)
     build_markov(con, rule_eras, venue_aliases)
+    build_projection(con)
     models = {}
     rows = []
     for innings in (1, 2):
@@ -334,15 +378,31 @@ def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | l
 
     wp = {i: "1 / (1 + exp(-(" + _logit([sql for _, sql in FEATURES[i]], models[i]) + ")))" for i in (1, 2)}
     markov_weight = f"least(greatest(({MARKOV_BALLS} - balls_left) / {MARKOV_BALLS - BLEND_FULL}, 0), 1)"
+    project_weight = f"least(greatest(({PROJECT_BALLS} - balls_left) / {PROJECT_BALLS - PROJECT_FULL}, 0), 1)"
+    nodes = " UNION ALL ".join(f"SELECT {z!r}::DOUBLE AS z, {w!r}::DOUBLE AS w" for z, w in HERMITE)
     con.execute(f"""
         CREATE OR REPLACE TABLE winprob AS
-        WITH before AS (
+        WITH projected AS (
+            -- 1 - the chase model's starting value, averaged over the target this innings is heading for
+            SELECT match_id, innings_no, seq, sum(w * (1 - {wp[2]})) AS wp_proj
+            FROM (SELECT s.match_id, s.innings_no, s.seq, n.w, s.rpb, 10.0::DOUBLE AS wkts_in_hand,
+                         s.allocation AS balls_left, s.score + 1 + s.rpb * greatest(p.mu + p.sd * n.z, 0) AS runs_required
+                  FROM _wp_state s
+                  JOIN _wp_project p ON p.balls_left = s.balls_left
+                                    AND p.wb = {WICKET_BAND_SQL.format(w='s.wkts_in_hand::INT')}
+                  CROSS JOIN ({nodes}) n
+                  WHERE s.innings_no = 1)
+            GROUP BY ALL
+        ),
+        before AS (
             SELECT match_id, innings_no, seq, y,
-                   CASE WHEN innings_no = 1 THEN {wp[1]}
+                   CASE WHEN innings_no = 1 AND pr.wp_proj IS NULL THEN {wp[1]}
+                        WHEN innings_no = 1 THEN {project_weight} * pr.wp_proj + (1 - {project_weight}) * {wp[1]}
                         WHEN runs_required <= 0 THEN 1.0
                         WHEN mk.wp_markov IS NULL THEN {wp[2]}
                         ELSE {markov_weight} * mk.wp_markov + (1 - {markov_weight}) * {wp[2]} END AS wp_before
             FROM _wp_state LEFT JOIN _wp_markov mk USING (match_id, innings_no, seq)
+            LEFT JOIN projected pr USING (match_id, innings_no, seq)
         ),
         chase_start AS (SELECT match_id, arg_min(wp_before, seq) AS wp FROM before WHERE innings_no = 2 GROUP BY 1),
         after AS (
@@ -373,5 +433,17 @@ def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | l
         FROM winprob w JOIN _wp_state s USING (match_id, innings_no, seq)
         WHERE s.innings_no = 2 AND s.runs_required > 0 AND s.balls_left BETWEEN 1 AND {BLEND_FULL}
         GROUP BY ALL ORDER BY 1, 2""")
-    for t in ("_wp_state", "_wp_train", "_wp_markov"):
+    # The first innings' last ball absorbs the gap between its value and the chase's start: mean ~0 if they agree.
+    con.execute("""
+        CREATE OR REPLACE TABLE winprob_handover AS
+        WITH last AS (SELECT match_id, arg_max(wp_before, seq) AS before, arg_max(wp_after, seq) AS after,
+                             arg_max(wpa, seq) AS wpa
+                      FROM winprob WHERE innings_no = 1 GROUP BY 1)
+        SELECT m.season_year, count(*) AS innings, round(avg(l.wpa), 3) AS last_ball_wpa,
+               round(avg(abs(l.wpa)), 3) AS last_ball_abs_wpa, round(avg(l.before), 3) AS predicted_before,
+               round(avg(l.after), 3) AS handed_over, round(avg(s.y), 3) AS actual
+        FROM last l JOIN matches m USING (match_id)
+        JOIN (SELECT DISTINCT match_id, y FROM _wp_state WHERE innings_no = 1) s USING (match_id)
+        GROUP BY ALL ORDER BY 1""")
+    for t in ("_wp_state", "_wp_train", "_wp_markov", "_wp_project"):
         con.execute(f"DROP TABLE IF EXISTS {t}")

@@ -276,7 +276,7 @@ p = 1 / (1 + e^(−z)),   z = b₀ + Σ bⱼ xⱼ
 | log_balls | ln(balls left + 1) |
 | difficulty_x_wickets, difficulty_x_balls, wickets_x_balls | products |
 
-Outcomes: won 1, lost 0, tied 0.5 (even if a super over decided it); no-result matches are left out. Fitting: Newton's method on standardised features with a small ridge penalty (λ = 1). A chase whose target is already reached has p = 1. Over the last 24 balls of a chase the logistic value is blended into a ball-by-ball model (6.1.1).
+Outcomes: won 1, lost 0, tied 0.5 (even if a super over decided it); no-result matches are left out. Fitting: Newton's method on standardised features with a small ridge penalty (λ = 1). A chase whose target is already reached has p = 1. Over the last 24 balls of a chase the logistic value is blended into a ball-by-ball model (6.1.1), and over the last 24 balls of a first innings into the chase model's view of the target being set (6.1.2).
 
 **Current IPL chase coefficients:** intercept 0.521, difficulty −3.837, wickets 10.387, log_balls −0.948, difficulty×wickets −2.043, difficulty×balls −0.095, wickets×balls −1.263. Fit: Brier score 0.138 for chases and 0.220 for first innings. Predicted and actual win rates agree within about 0.02 in almost every tenth of probability (`pitchside winprob ipl`).
 
@@ -334,13 +334,33 @@ The Hyderabad-specific cell also gives **0.54**. Thakur was lbw to Malinga and M
 
 **Calibration** (`pitchside winprob ipl`, table *End of the chase*): with 2-12 balls left, predicted and actual agree within about 0.03 when needing up to 2 a ball. The model is still **too low by 0.08-0.09 when needing 2-3 a ball**. Treating balls as independent misses hitting streaks: a set batter who has just hit a six is more likely to hit another. The same limitation is reported for exactly solvable T20 models elsewhere.
 
+### 6.1.2 The end of the first innings
+
+The first innings hands over to 1 − (the chase's starting probability), so whatever gap is left between the two models lands on the first innings' last ball. On its own the first-innings logistic curve drifts upwards over the last two overs: in IPL data it predicted 0.495 over the last 12 balls when the side batting first went on to win 0.468 of the time. The chase start was close to calibrated, so the last ball averaged **−0.06 WPA** (mean |WPA| 0.07), even for a last-ball six. That biased batting-first sides' batting WPA and death-over WPA downwards.
+
+So over the last **24 balls** the first-innings value is blended into a **projected handover value**: what the chase model will say at the start of the chase, averaged over the target this innings is heading for.
+
+```
+rest ~ Normal(μ, σ²)                      runs still to come, in units of the season's rpb
+handover = Σₖ wₖ × (1 − chase_wp(target = score + 1 + rpb × max(μ + σ zₖ, 0),
+                                  balls left = the allocation, wickets in hand = 10))
+```
+
+`(zₖ, wₖ)` is the five-point Gauss-Hermite rule for a standard normal (nodes 0, ±1.356, ±2.857; weights 0.533, 0.222, 0.011). μ and σ are the mean and spread of the runs actually scored from that point to the end of first innings with the same **balls left** (1-24) and **wickets in hand** band (1-2, 3-4, 5-6, 7+), each cell shrunk towards its balls-left cell with 50 pseudo-innings (table `winprob_projection`). All-out innings count with the runs they actually added.
+
+**Blend.** wp = m × handover + (1 − m) × logistic, with m = clamp((24 − b) / 12, 0, 1): the logistic alone at 24 balls and above, the handover value alone at 12 and below. The innings' start and end are unchanged, so the WPA properties in 6.2 still hold exactly. The last ball now carries only the difference between the runs it brought and the runs expected.
+
+**Worked example: Dube's last-ball six.** 2026, CSK 181/5 with one ball left; 2026 rpb ≈ 1.647. The (1 ball, 5-6 in hand) cell has μ = 1.64 and σ = 1.48, so a target of about 185 is expected and the handover value is **0.324**. The six made it 187: LSG needed 188 off 120 and the chase model gave them 0.653, so CSK moved to 0.347, which is **+0.023 WPA** for Dube. Before this change the same ball was scored at −0.071.
+
+**Check** (`pitchside winprob ipl`, table *End of the first innings*): the last ball's mean WPA is −0.01 to 0 in every IPL season, mean |WPA| about 0.015. Innings that use the full allocation average −0.002. What's left comes from two real events: an all-out last ball (−0.04 on average: the final wicket costs the runs still to come), and the 23 matches whose chase was shortened by rain after the first innings (about −0.15 on average). Neither can be known when the ball is bowled.
+
 ### 6.2 Win probability added (WPA)
 
 ```
 WPA(ball) = p_after − p_before         from the batting side's point of view, in wins
 ```
 
-`p_after` is the next ball's `p_before`. The end of the first innings hands over to 1 − (the chase's starting probability); the end of the chase is the result (1, 0, or 0.5 for a tie). So each innings' WPA sums exactly to its end minus its start.
+`p_after` is the next ball's `p_before`. The end of the first innings hands over to 1 − (the chase's starting probability); the end of the chase is the result (1, 0, or 0.5 for a tie). So each innings' WPA sums exactly to its end minus its start. 6.1.2 keeps the first-innings handover from landing on the last ball.
 
 **Credit:**
 
@@ -360,7 +380,7 @@ total_wpa     = Σ batting WPA + Σ bowling WPA    over the slice
 wpa_per_match = total_wpa / matches played in the slice
 ```
 
-**Example: 2026 MVP.** Bhuvneshwar Kumar 1.91 (0.62 batting + 1.29 bowling), Vaibhav Suryavanshi 1.57, Shreyas Iyer 1.32. A WPA of 1.0 means one full match swung from certain defeat to certain victory.
+**Example: 2026 MVP.** Bhuvneshwar Kumar 1.93 (0.38 batting + 1.55 bowling), Vaibhav Suryavanshi 1.58, Shreyas Iyer 1.21. A WPA of 1.0 means one full match swung from certain defeat to certain victory.
 
 `match_impact` shows, for one match: the batting-first side's win probability at the end of each over, players' total WPA in that match, and the five balls with the largest |WPA|.
 
