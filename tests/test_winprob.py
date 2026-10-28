@@ -121,3 +121,34 @@ def test_ipl_winprob_calibrated_and_consistent():
             WHERE w.innings_no = 2""").fetchone()
         assert abs(pred - actual) < 0.15, (pred, actual)
         assert "AB de Villiers" in tools.mvp(top=5)
+
+
+def test_leverage_on_tiny_match(mini_engine):
+    q = mini_engine.con.execute
+    lo, hi, mean_li = q("SELECT min(leverage), max(leverage), avg(leverage_index) FROM test.winprob").fetchone()
+    assert 0 <= lo <= hi <= 1 and mean_li == pytest.approx(1)
+    # Leverage can't make WPA move: the before/after values are the same model as without it.
+    assert q("SELECT count(*) FROM test.winprob WHERE leverage IS NULL").fetchone()[0] == 0
+    row = aggregate(mini_engine, "batting", players=["a3"], by=["leverage"], metrics=["balls", "avg_leverage"]).records()
+    assert row and all(r["leverage"] in ("1 low", "2 medium", "3 high", "4 very high") for r in row)
+
+
+@pytest.mark.integration
+def test_ipl_leverage():
+    if not get_tournament("ipl").db_path.exists():
+        pytest.skip("IPL database not loaded")
+    with open_engine(["ipl"]) as e:
+        q = e.con.execute
+        # The biggest moments are at the end of chases; the first innings' death matters least.
+        li = dict(((i, p), v) for i, p, v in q(
+            "SELECT innings_no, phase, avg(leverage_index) FROM v_balls GROUP BY 1, 2").fetchall())
+        assert li[(1, "powerplay")] > li[(1, "middle")] > li[(1, "death")]
+        assert max(li[(2, p)] for p in ("powerplay", "middle", "death")) > li[(1, "powerplay")]
+        # Swings follow leverage: the average |WPA| of a ball rises with its leverage bucket.
+        swing = [r[0] for r in q("""SELECT avg(abs(wpa)) FROM v_balls WHERE leverage_index IS NOT NULL
+                                    GROUP BY least(floor(leverage_index), 4) ORDER BY least(floor(leverage_index), 4)""").fetchall()]
+        assert swing == sorted(swing)
+        # Needing 4 off the last ball: a six wins, a wicket loses, so leverage is about 1.
+        lev = q("""SELECT avg(w.leverage) FROM ipl.winprob w JOIN ipl.deliveries d USING (match_id, innings_no, seq)
+                   WHERE d.innings_no = 2 AND d.balls_remaining = 1 AND d.runs_required BETWEEN 2 AND 6""").fetchone()[0]
+        assert lev > 0.9

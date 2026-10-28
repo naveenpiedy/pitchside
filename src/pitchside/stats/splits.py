@@ -35,6 +35,9 @@ DIMENSIONS: dict[str, str] = {
                     "WHEN nth_ball <= 10 THEN '06-10' "
                     "WHEN nth_ball <= 20 THEN '11-20' WHEN nth_ball <= 30 THEN '21-30' ELSE '31+' END"),
     "wickets_down": "wickets_before",
+    # Leverage index (1 = an average ball); cut-offs after Tom Tango's low / medium / high.
+    "leverage": ("CASE WHEN leverage_index IS NULL THEN 'n/a' WHEN leverage_index < 0.85 THEN '1 low' "
+                 "WHEN leverage_index < 2 THEN '2 medium' WHEN leverage_index < 4 THEN '3 high' ELSE '4 very high' END"),
     # Chases only: runs required per over before the ball.
     "required_rate": ("CASE WHEN innings_no = 1 THEN 'setting' WHEN balls_remaining = 0 THEN '15+' "
                       "WHEN 6.0 * runs_required / balls_remaining < 6 THEN '00-06' "
@@ -61,6 +64,7 @@ ORDERED = {
     "entry_bucket": "entry_bucket", "entry_over": "entry_over", "entry_wickets": "entry_wickets",
     "phase": "CASE phase WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END",
     "setting_chasing": "min(innings_no)", "wickets_down": "wickets_down", "required_rate": "required_rate",
+    "leverage": "leverage",
 }
 
 BATTING_METRICS: dict[str, tuple[str, bool]] = {  # name: (sql, higher_is_better)
@@ -92,6 +96,11 @@ BATTING_METRICS: dict[str, tuple[str, bool]] = {  # name: (sql, higher_is_better
     "runs_added": ("round(sum(runs) - sum(exp_runs) + (sum(exp_wkt_runs) - sum(wkt_value * out)), 1)", True),
     "runs_added_per_100": ("round(100.0 * (sum(runs) - sum(exp_runs) + (sum(exp_wkt_runs) - sum(wkt_value * out))) "
                            "/ nullif(sum(faced), 0), 2)", True),
+    # Leverage: the average pressure of a player's balls (1 = average), and runs added with each
+    # ball weighted by its leverage index (balls of matches without a result are left out).
+    "avg_leverage": ("round(sum(leverage_index * faced) / nullif(sum(faced) FILTER (leverage_index IS NOT NULL), 0), 2)",
+                     True),
+    "lev_runs_added": ("round(sum(leverage_index * (runs - exp_runs)) + sum(leverage_index * (exp_wkt_runs - wkt_value * out)), 1)", True),
     # Win probability added (A1), in wins: the change in the batting side's win chance on balls faced.
     "wpa": ("round(sum(wpa), 2)", True),
     "wpa_per_match": ("round(sum(wpa) / nullif(count(DISTINCT match_id), 0), 3)", True),
@@ -128,6 +137,9 @@ BOWLING_METRICS: dict[str, tuple[str, bool]] = {
     "runs_added": ("round(sum(exp_runs) - sum(runs) + (sum(wkt_value * wickets) - sum(exp_wkt_runs)), 1)", True),
     "runs_added_per_100": ("round(100.0 * (sum(exp_runs) - sum(runs) + (sum(wkt_value * wickets) - sum(exp_wkt_runs))) "
                            "/ nullif(sum(balls), 0), 2)", True),
+    "avg_leverage": ("round(sum(leverage_index * balls) / nullif(sum(balls) FILTER (leverage_index IS NOT NULL), 0), 2)",
+                     True),
+    "lev_runs_added": ("round(sum(leverage_index * (exp_runs - runs)) + sum(leverage_index * (wkt_value * wickets - exp_wkt_runs)), 1)", True),
     # Win probability added (A1), in wins, from the bowling side's point of view.
     "wpa": ("round(sum(wpa), 2)", True),
     "wpa_per_match": ("round(sum(wpa) / nullif(count(DISTINCT match_id), 0), 3)", True),
@@ -164,7 +176,7 @@ DEFAULT_METRICS = {
 }
 RATE_METRICS = {"average", "strike_rate", "dot_pct", "boundary_pct", "balls_per_boundary", "economy",
                 "run_rate", "balls_per_wicket", "exp_sr", "net_sr", "exp_avg", "net_avg", "exp_economy",
-                "net_economy", "net_dot_pct", "net_boundary_pct", "runs_added_per_100"}
+                "net_economy", "net_dot_pct", "net_boundary_pct", "runs_added_per_100", "avg_leverage"}
 # Shown for net stats: actual, expected, difference.
 NET_METRICS = {
     "batting": ["innings", "balls", "runs", "exp_runs", "net_runs", "strike_rate", "exp_sr", "net_sr",
