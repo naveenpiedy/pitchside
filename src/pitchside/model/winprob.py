@@ -36,6 +36,12 @@ upwards over the last overs, so that ball averaged -0.06). Over the last
 PROJECT_BALLS the logistic value is blended (alone from PROJECT_FULL down) into
 1 - the chase model's starting value averaged over the projected target: runs
 still to come ~ normal, with mean and spread per (balls left, wickets band).
+
+Leverage (Tom Tango's idea, brought to T20 by Himanish Ganjoo's metrics primer):
+how much one ball can swing the game, = the batting side's win probability if
+the ball goes for six minus if it takes a wicket, both from the same blended
+model as wp_before. `leverage_index` divides it by the competition's average
+ball, so 1 is a typical ball and 3 one that can swing three times as much.
 """
 
 from __future__ import annotations
@@ -304,7 +310,8 @@ def build_markov(con: duckdb.DuckDBPyConnection, rule_eras, venue_aliases) -> No
         LEFT JOIN _wp_venue_alias va ON va.name = m.venue
         WHERE d.innings_no = 2 AND NOT i.is_super_over AND d.runs_required > 0 AND d.wickets_before < 10
           AND d.balls_remaining BETWEEN 1 AND {MARKOV_BALLS}""").fetchall()
-    solvers, out = {}, {"match_id": [], "innings_no": [], "seq": [], "wp_markov": []}
+    solvers = {}
+    out = {"match_id": [], "innings_no": [], "seq": [], "wp_markov": [], "wp_markov_six": [], "wp_markov_wicket": []}
     for match_id, innings_no, seq, e, venue, b, w, r in states:
         if (e, venue) not in solvers:
             cells = {k: [(int(o[0]), o[1], int(o[2]), p)
@@ -314,9 +321,13 @@ def build_markov(con: duckdb.DuckDBPyConnection, rule_eras, venue_aliases) -> No
         out["match_id"].append(match_id)
         out["innings_no"].append(innings_no)
         out["seq"].append(seq)
-        out["wp_markov"].append(solvers[(e, venue)](b, w, r))
+        value = solvers[(e, venue)]
+        out["wp_markov"].append(value(b, w, r))
+        out["wp_markov_six"].append(value(b - 1, w, r - 6))       # for leverage
+        out["wp_markov_wicket"].append(value(b - 1, w - 1, r))
     schema = pa.schema([("match_id", pa.string()), ("innings_no", pa.int32()), ("seq", pa.int32()),
-                        ("wp_markov", pa.float64())])
+                        ("wp_markov", pa.float64()), ("wp_markov_six", pa.float64()),
+                        ("wp_markov_wicket", pa.float64())])
     con.register("_wp_markov_arrow", pa.table(out, schema=schema))
     con.execute("CREATE OR REPLACE TEMP TABLE _wp_markov AS SELECT * FROM _wp_markov_arrow")
     con.unregister("_wp_markov_arrow")
@@ -358,6 +369,21 @@ def build_projection(con: duckdb.DuckDBPyConnection) -> None:
         FROM _wp_project ORDER BY balls_left, wb""")
 
 
+def _projected_sql(src: str, keys: str, wp2: str, nodes: str) -> str:
+    """1 - the chase model's starting value, averaged over the target a first innings in state `src`
+    is heading for (rows per `keys`, column wp_proj)."""
+    return f"""
+        SELECT {keys}, sum(w * (1 - {wp2})) AS wp_proj
+        FROM (SELECT {', '.join('s.' + k.strip() for k in keys.split(','))}, n.w, s.rpb, 10.0::DOUBLE AS wkts_in_hand,
+                     s.allocation AS balls_left, s.score + 1 + s.rpb * greatest(p.mu + p.sd * n.z, 0) AS runs_required
+              FROM {src} s
+              JOIN _wp_project p ON p.balls_left = s.balls_left
+                                AND p.wb = {WICKET_BAND_SQL.format(w='s.wkts_in_hand::INT')}
+              CROSS JOIN ({nodes}) n
+              WHERE s.innings_no = 1)
+        GROUP BY ALL"""
+
+
 def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | list[int] = (),
                   venue_aliases: dict[str, str] | None = None) -> None:
     """(Re)build `winprob` (per delivery: wp_before, wp_after, wpa for the batting side),
@@ -384,15 +410,7 @@ def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | l
         CREATE OR REPLACE TABLE winprob AS
         WITH projected AS (
             -- 1 - the chase model's starting value, averaged over the target this innings is heading for
-            SELECT match_id, innings_no, seq, sum(w * (1 - {wp[2]})) AS wp_proj
-            FROM (SELECT s.match_id, s.innings_no, s.seq, n.w, s.rpb, 10.0::DOUBLE AS wkts_in_hand,
-                         s.allocation AS balls_left, s.score + 1 + s.rpb * greatest(p.mu + p.sd * n.z, 0) AS runs_required
-                  FROM _wp_state s
-                  JOIN _wp_project p ON p.balls_left = s.balls_left
-                                    AND p.wb = {WICKET_BAND_SQL.format(w='s.wkts_in_hand::INT')}
-                  CROSS JOIN ({nodes}) n
-                  WHERE s.innings_no = 1)
-            GROUP BY ALL
+            {_projected_sql('_wp_state', 'match_id, innings_no, seq', wp[2], nodes)}
         ),
         before AS (
             SELECT match_id, innings_no, seq, y,
@@ -414,6 +432,8 @@ def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | l
         SELECT match_id, innings_no, seq, wp_before, wp_after, wp_after - wp_before AS wpa
         FROM after WHERE y IS NOT NULL
     """)
+
+    build_leverage(con, wp, nodes, markov_weight, project_weight)
 
     # Calibration: predicted vs actual, by decile of predicted win probability.
     con.execute("""
@@ -445,5 +465,55 @@ def build_winprob(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] | l
         FROM last l JOIN matches m USING (match_id)
         JOIN (SELECT DISTINCT match_id, y FROM _wp_state WHERE innings_no = 1) s USING (match_id)
         GROUP BY ALL ORDER BY 1""")
-    for t in ("_wp_state", "_wp_train", "_wp_markov", "_wp_project"):
+    for t in ("_wp_state", "_wp_train", "_wp_markov", "_wp_project", "_wp_hyp"):
         con.execute(f"DROP TABLE IF EXISTS {t}")
+
+
+def build_leverage(con: duckdb.DuckDBPyConnection, wp: dict[int, str], nodes: str,
+                   markov_weight: str, project_weight: str) -> None:
+    """Add `leverage` (win probability after a six minus after a wicket, for the batting side) and
+    `leverage_index` (leverage / the competition's mean) to `winprob`. The hypothetical states go
+    through the same blend as wp_before; an innings they end is valued like the real ending."""
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE _wp_hyp AS
+        SELECT s.match_id, s.innings_no, s.seq, k.kind, s.rpb, s.allocation, s.y,
+               s.score + CASE k.kind WHEN 'six' THEN 6 ELSE 0 END AS score,
+               s.wkts_in_hand - CASE k.kind WHEN 'wicket' THEN 1 ELSE 0 END AS wkts_in_hand,
+               s.balls_left - 1 AS balls_left,
+               s.runs_required - CASE k.kind WHEN 'six' THEN 6 ELSE 0 END AS runs_required,
+               CASE k.kind WHEN 'six' THEN mk.wp_markov_six ELSE mk.wp_markov_wicket END AS wp_markov
+        FROM _wp_state s
+        CROSS JOIN (SELECT 'six' AS kind UNION ALL SELECT 'wicket') k
+        LEFT JOIN _wp_markov mk USING (match_id, innings_no, seq)
+        WHERE s.y IS NOT NULL AND s.balls_left >= 1 AND s.wkts_in_hand >= 1""")
+    keys = "match_id, innings_no, seq, kind"
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE _wp_lev AS
+        WITH projected AS ({_projected_sql('_wp_hyp', keys, wp[2], nodes)}),
+        -- a first innings the outcome would end: hand over at the chase's start against score + 1
+        ended AS (SELECT {keys}, 1 - {wp[2]} AS wp_end
+                  FROM (SELECT {keys}, rpb, 10.0::DOUBLE AS wkts_in_hand, allocation AS balls_left,
+                               score + 1 AS runs_required
+                        FROM _wp_hyp WHERE innings_no = 1 AND (balls_left <= 0 OR wkts_in_hand <= 0))),
+        valued AS (
+            SELECT h.match_id, h.innings_no, h.seq, h.kind,
+                   CASE WHEN h.innings_no = 1 AND e.wp_end IS NOT NULL THEN e.wp_end
+                        WHEN h.innings_no = 1 AND pr.wp_proj IS NULL THEN {wp[1]}
+                        WHEN h.innings_no = 1 THEN {project_weight} * pr.wp_proj + (1 - {project_weight}) * {wp[1]}
+                        WHEN h.runs_required <= 0 THEN 1.0
+                        WHEN h.balls_left <= 0 OR h.wkts_in_hand <= 0 THEN CASE WHEN h.runs_required = 1 THEN 0.5 ELSE 0.0 END
+                        WHEN h.wp_markov IS NULL THEN {wp[2]}
+                        ELSE {markov_weight} * h.wp_markov + (1 - {markov_weight}) * {wp[2]} END AS wp
+            FROM _wp_hyp h
+            LEFT JOIN projected pr USING ({keys})
+            LEFT JOIN ended e USING ({keys}))
+        SELECT match_id, innings_no, seq,
+               greatest(max(wp) FILTER (kind = 'six') - max(wp) FILTER (kind = 'wicket'), 0) AS leverage
+        FROM valued GROUP BY ALL""")
+    con.execute("""
+        CREATE OR REPLACE TABLE winprob AS
+        SELECT w.*, coalesce(l.leverage, 0) AS leverage,
+               -- every ball equal (a flat model) is index 1, not undefined
+               coalesce(coalesce(l.leverage, 0) / nullif(avg(l.leverage) OVER (), 0), 1) AS leverage_index
+        FROM winprob w LEFT JOIN _wp_lev l USING (match_id, innings_no, seq)""")
+    con.execute("DROP TABLE IF EXISTS _wp_lev")

@@ -124,7 +124,7 @@ Every analysis takes the same filters, as `-f key=value` on the command line or 
 | Bowling / batting style | `bowl_type` (pace/spin), `bowl_subtype` (RF RFM RMF RM LF LFM LMF LM OB LB SLA LWS), `bowling_arm`, `batting_hand` |
 | Where | `venue`, `city` |
 
-Lists use commas (`bowl_subtype=OB,LB`). Splits group by dimensions (`--by season,phase`): the filter keys plus `ball_bucket`, `entry_bucket`, `required_rate`, `order_group`, `player`, `bowler`, `batter`, `team_name`.
+Lists use commas (`bowl_subtype=OB,LB`). Splits group by dimensions (`--by season,phase`): the filter keys plus `ball_bucket`, `entry_bucket`, `required_rate`, `leverage`, `order_group`, `player`, `bowler`, `batter`, `team_name`.
 
 Results flag small samples (`low` under 30 balls, `small` under 120) and are cached until new data arrives.
 
@@ -154,6 +154,8 @@ A 30-ball hot streak shouldn't top a leaderboard. Every rate has a shrunk versio
 ### Win probability and WPA
 
 Two models per competition (first innings and chase), fitted on its own history, give each side's chance of winning before every ball. A ball's **WPA** (win probability added) is the change it causes, in wins: batters earn it on balls they face, bowlers the opposite on balls they bowl. `wpa` and `wpa_per_match` work as metrics everywhere; `mvp` and `impact` summarise them. Net stats measure efficiency; WPA measures effect on results.
+
+**Leverage** is how much a ball could swing the game: the win probability if it goes for six minus if it takes a wicket. Its index is 1 for a typical ball; the last ball of a close chase can reach 9. Split by it (`--by leverage`: low, medium, high, very high), see how high-pressure a player's balls were (`avg_leverage`), or weight runs added by it (`lev_runs_added`).
 
 Over the last four overs of a chase, the chase model hands over to a ball-by-ball model. A smooth curve treats "2 off 1" as a required rate only a little above par and said 0.92; ball-by-ball, it's mostly a dot or a single, and the IPL chases that faced it scored about 0.6 (a tie counting half). The ball-by-ball model works backwards from the last ball, using per-ball outcome chances (dots, runs, extras, wickets) for that many wickets in hand, runs needed per ball and balls left, era and ground. `uv run pitchside winprob ipl` shows the model and how well calibrated it is, including the last 12 balls of chases.
 
@@ -319,5 +321,5 @@ GitHub Actions ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) ru
 
 - Match data: [Cricsheet](https://cricsheet.org), released under the [Open Data Commons Attribution License](https://opendatacommons.org/licenses/by/1-0/). pitchside downloads it to your machine and doesn't redistribute it; anything you publish from it (tables, charts, blog posts) should credit Cricsheet.
 - Batting hand and bowling style: [Wikipedia](https://www.wikipedia.org) infoboxes (text under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)), found via [Wikidata](https://www.wikidata.org) and each player's Cricinfo id in Cricsheet's people register. Fetched to a local CSV, not redistributed.
-- Ideas: net stats are inspired by the "true stats" of Jarrod Kimber and Good Areas. Himanish Ganjoo's [T20 Metrics: A Primer](https://hganjoo.github.io/t20basics/) gave two of them: conditioning the chase baseline on the target (the required-rate factor), and pricing wickets in runs with a Duckworth–Lewis style curve (runs added, his "Impact"). The models here are pitchside's own.
+- Ideas: net stats are inspired by the "true stats" of Jarrod Kimber and Good Areas. Himanish Ganjoo's [T20 Metrics: A Primer](https://hganjoo.github.io/t20basics/) gave two of them: conditioning the chase baseline on the target (the required-rate factor), pricing wickets in runs with a Duckworth–Lewis style curve (runs added, his "Impact"), and leverage (after Tom Tango). The models here are pitchside's own.
 - Code: [MIT](LICENSE).

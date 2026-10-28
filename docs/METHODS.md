@@ -429,6 +429,34 @@ wpa_per_match = total_wpa / matches played in the slice
 
 **Net stats vs WPA.** Net stats measure efficiency against an average player on the same balls. WPA measures effect on the result, so a single in the last over of a tight chase is worth far more than a six at 200/2.
 
+### 6.4 Leverage
+
+How much one ball *could* swing the game, whatever actually happened on it (Tom Tango's idea from baseball, brought to T20 by Himanish Ganjoo's [metrics primer](https://hganjoo.github.io/t20basics/)):
+
+```
+leverage        = wp(batting side, if the ball goes for six) − wp(batting side, if it takes a wicket)
+leverage_index  = leverage / the competition's average leverage            (1 = a typical ball)
+```
+
+Both hypothetical values come from the same blend as `wp_before` (logistic models, the Markov chase solver over the last four overs, the projected handover at the end of a first innings), at the state after a legal ball: six runs more, or one wicket more. An outcome that ends an innings is valued like the real ending: a first innings hands over at the chase's start against score + 1; a chase is won (1), tied (0.5) or lost (0). Leverage is never negative and at most 1. Matches without a result have no leverage.
+
+IPL: the average ball has leverage 0.107 (10.7 points of win probability between a six and a wicket). By innings and phase, mean leverage index:
+
+| | powerplay | middle | death |
+|---|---|---|---|
+| First innings | 0.96 | 0.82 | 0.58 |
+| Chase | 1.20 | 1.18 | 1.28 (median 0.66; 30% of balls near 0) |
+
+The first innings is most open early and fades as the total takes shape. Chases spread out: decided chases sit at zero, close ones climb to the maximum. **Worked example:** IPL 2023 final, a 15-over chase, last ball, 4 needed. A six wins (1.0), a wicket loses (0.0): leverage **1.0**, index **9.3**. The ball before it (10 off 2) was 0.26.
+
+**Buckets** (dimension `leverage`, cut-offs after Tango): `1 low` < 0.85 (40% of IPL balls), `2 medium` 0.85–2 (54%), `3 high` 2–4 (5.5%), `4 very high` 4+ (0.5%).
+
+**Metrics.** `avg_leverage` = Σ leverage_index × balls / balls (how high-pressure a player's balls were; per ball faced for batters, per legal ball for bowlers). `lev_runs_added` = runs added (§4.5) with each ball weighted by its leverage index, so runs in big moments count more. It is not zero-sum.
+
+**Example, IPL 2023+.** Ashutosh Sharma: 334 balls at average leverage 1.24, runs added +107, leverage-weighted +223: a finisher whose runs came when they mattered. Klaasen: average leverage 0.82, +348 → +298, much of his scoring at lower stakes.
+
+**Leverage and WPA.** The average |WPA| of a ball rises with its leverage (IPL: 0.75 points in `low`, 1.3 in `medium`, 3.8 in `high`, 14 in `very high`), which is what leverage is meant to measure. Ganjoo reports WPA flat across leverage bins; we don't reproduce that.
+
 ---
 
 ## 7. Entry point
@@ -543,6 +571,7 @@ Composed entirely from the pieces above; nothing new is modelled.
 | Per-ball expectation: level | One competition, one season, one over number | At load |
 | Per-ball expectation: situation, settle and chase factors | One competition, one rules era, one phase | At load |
 | Per-ball expectation: venue factor | One competition, one rules era, one ground | At load |
+| Leverage (win probability after a six minus after a wicket) | One competition, the fitted win-probability blend | At load |
 | Run production `R(b, w)` (wicket value) | One competition, one rules era (shrunk to all eras), complete first innings | At load |
 | Shrinkage `k` | One competition, all player-seasons with 60+ balls | At load |
 | Win-probability model | One competition, all seasons; era context via season runs per ball | At load |
