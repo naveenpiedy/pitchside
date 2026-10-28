@@ -308,15 +308,16 @@ def baselines(
                                help="bat_runs bat_out bat_dot bat_bnd bowl_runs bowl_wkt bowl_dot bowl_bnd"),
     phase: str = typer.Option(None, "--phase", "-p"),
 ) -> None:
-    """Inspect net-stat factors: situation (wickets down x setting/chasing) and settle (balls already faced),
-    per rules era and phase, and venue (per rules era and ground)."""
+    """Inspect net-stat factors: situation (wickets down x setting/chasing), settle (balls already faced) and
+    chase (required rate / season run rate), per rules era and phase, and venue (per rules era and ground)."""
     con = connect(get_tournament(tournament).db_path, read_only=True)
     try:
-        sql = ("SELECT kind, era, phase, wickets_down, innings, balls_faced, venue, round(factor, 3) AS factor, "
+        sql = ("SELECT kind, era, phase, wickets_down, innings, balls_faced, required_rate, venue, "
+               "round(factor, 3) AS factor, "
                "weight "
                "FROM baseline_factors WHERE target = ?" + (" AND phase = ?" if phase else "") +
                " ORDER BY kind DESC, era, CASE phase WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END, "
-               "wickets_down, innings, balls_faced, venue")
+               "wickets_down, innings, balls_faced, required_rate, venue")
         cur = con.execute(sql, [target, phase] if phase else [target])
         _show(Table([c[0] for c in cur.description], [list(r) for r in cur.fetchall()],
                     title=f"{tournament} {target} factors (1 = the over's season average)"))

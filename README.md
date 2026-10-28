@@ -317,4 +317,5 @@ GitHub Actions ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) ru
 
 - Match data: [Cricsheet](https://cricsheet.org), released under the [Open Data Commons Attribution License](https://opendatacommons.org/licenses/by/1-0/). pitchside downloads it to your machine and doesn't redistribute it; anything you publish from it (tables, charts, blog posts) should credit Cricsheet.
 - Batting hand and bowling style: [Wikipedia](https://www.wikipedia.org) infoboxes (text under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)), found via [Wikidata](https://www.wikidata.org) and each player's Cricinfo id in Cricsheet's people register. Fetched to a local CSV, not redistributed.
+- Ideas: net stats are inspired by the "true stats" of Jarrod Kimber and Good Areas. Conditioning the chase baseline on the target (the required-rate factor) came from Himanish Ganjoo's [T20 Metrics: A Primer](https://hganjoo.github.io/t20basics/), which uses the target as a baseline input in the second innings. The models here are pitchside's own.
 - Code: [MIT](LICENSE).

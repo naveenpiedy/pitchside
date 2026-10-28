@@ -81,7 +81,7 @@ WHERE NOT i.is_super_over
 """
 
 CONTEXT_COLS = """match_id, innings_no, seq, competition, season_year, match_date, venue, city, stage,
-       phase, over_no, wickets_before, score_before, balls_remaining,
+       phase, over_no, wickets_before, score_before, balls_remaining, runs_required,
        bowl_type, bowl_subtype, bowling_arm, bowler_id, batter_id"""
 
 V_BAT = f"""
