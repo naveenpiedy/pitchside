@@ -30,7 +30,9 @@ DIMENSIONS: dict[str, str] = {
     "venue": "venue",
     "city": "city",
     "stage": "stage",
-    "ball_bucket": ("CASE WHEN nth_ball <= 5 THEN '01-05' WHEN nth_ball <= 10 THEN '06-10' "
+    # A run-out at the non-striker's end has no nth_ball: it gets its own bucket, not '31+'.
+    "ball_bucket": ("CASE WHEN nth_ball IS NULL THEN 'non-striker' WHEN nth_ball <= 5 THEN '01-05' "
+                    "WHEN nth_ball <= 10 THEN '06-10' "
                     "WHEN nth_ball <= 20 THEN '11-20' WHEN nth_ball <= 30 THEN '21-30' ELSE '31+' END"),
     "wickets_down": "wickets_before",
     # Chases only: runs required per over before the ball.

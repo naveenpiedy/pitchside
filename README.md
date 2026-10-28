@@ -124,7 +124,7 @@ Every analysis takes the same filters, as `-f key=value` on the command line or 
 | Bowling / batting style | `bowl_type` (pace/spin), `bowl_subtype` (RF RFM RMF RM LF LFM LMF LM OB LB SLA LWS), `bowling_arm`, `batting_hand` |
 | Where | `venue`, `city` |
 
-Lists use commas (`bowl_subtype=OB,LB`). Splits group by dimensions (`--by season,phase`): the filter keys plus `ball_bucket`, `entry_bucket`, `order_group`, `player`, `bowler`, `batter`, `team_name`.
+Lists use commas (`bowl_subtype=OB,LB`). Splits group by dimensions (`--by season,phase`): the filter keys plus `ball_bucket`, `entry_bucket`, `required_rate`, `order_group`, `player`, `bowler`, `batter`, `team_name`.
 
 Results flag small samples (`low` under 30 balls, `small` under 120) and are cached until new data arrives.
 

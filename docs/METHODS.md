@@ -231,7 +231,9 @@ Kohli's value is almost all survival; Abhishek's is scoring, partly paid back in
 
 **Relation to Impact.** Himanish Ganjoo's [T20 Metrics primer](https://hganjoo.github.io/t20basics/) defines a ball's Impact as runs + `R(after) − R(before)` on a Duckworth–Lewis curve. Since on average `R(b, w) = E[runs] + R(b − 1, w) − p × value`, that expands to (runs − expected runs) + wicket value × (p − wicket): the same as runs added, but with the run curve's own expectations. Runs added uses the net-stat expectations instead (settle, chase pressure, venue), so it inherits their context.
 
-**Properties.** Zero-sum per season for batting and for bowling. Flat to within about ±3 per 100 balls by phase, wickets down, setting/chasing, required rate and entry point (tested at ±4). Two known gaps: batters in chases needing 15+ an over read about −2.5, out at costlier moments than their cells' average; and batters past their 30th ball are out about 500 times more than expected over IPL history (the settle factor stops at 11+), which runs added prices at about −8.6 per 100 balls. That second gap is in `outs_saved` too; runs added only makes it visible.
+**Properties.** Zero-sum per season for batting and for bowling. Flat to within about ±3 per 100 balls by phase, wickets down, setting/chasing, required rate, balls faced and entry point (tested at ±4). The largest gap: batters in chases needing 15+ an over read about −2.5, out at costlier moments than their cells' average.
+
+**Run-outs at the non-striker's end.** The striker's row carries the expectation of any dismissal on the ball (§4.2), but a run-out at the other end is charged to the non-striker, on a row with no ball faced. So every balls-faced bucket reads slightly positive (IPL: +0.2 to +2.7 runs added per 100 balls) and the `non-striker` bucket of `ball_bucket` holds the other side: IPL 567 such run-outs, −2,738 runs. Over a career a batter spends about as long at each end, so it evens out.
 
 ---
 

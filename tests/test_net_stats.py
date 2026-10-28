@@ -130,9 +130,8 @@ def test_ipl_runs_added_zero_sum_and_flat():
             assert all(abs(r["runs_added"]) < 0.2 for r in league), league
             # Looser than net SR (< 3): the wicket price varies inside the factor cells, so e.g.
             # batters in 15+-an-over chases, out at costlier moments than average, read ~-3.
-            # No ball_bucket: the settle factor stops at 11+, and batters past 30 balls are out
-            # ~500 times more than expected (IPL), which runs added prices at ~-8 per 100 balls.
-            for dim in ("wickets_down", "setting_chasing", "phase", "entry_bucket", "required_rate"):
+            # (ball_bucket's 'non-striker' rows, run-outs at the other end, have no balls and are skipped.)
+            for dim in ("wickets_down", "setting_chasing", "phase", "ball_bucket", "entry_bucket", "required_rate"):
                 league = aggregate(e, role, by=[dim], metrics=["balls", "runs_added_per_100"]).records()
                 assert all(abs(r["runs_added_per_100"]) < 4 for r in league if r["balls"] >= 5000), (dim, league)
         # An early wicket costs more than a late one.
