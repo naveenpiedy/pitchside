@@ -133,7 +133,7 @@ Results flag small samples (`low` under 30 balls, `small` under 120) and are cac
 Raw numbers mislead because of when players bat and bowl: a 150 strike rate is excellent in the middle overs and ordinary at the death. Net stats compare every ball with what an average player in the same competition would produce in the same situation:
 
 - the competition's scoring level for that **over in that season** (so 2010 and 2026 are each judged against their own era),
-- adjusted for **wickets down** and **setting vs chasing**,
+- adjusted for **wickets down**, **setting vs chasing** and, in a chase, the **required rate**,
 - and for how **settled the batter is** (balls 1–5, 6–10, 11+ at the crease), so late arrivals aren't judged against set batters,
 - with the adjustments estimated separately per **rules era** (`rule_eras` in `tournaments.toml`; the IPL changes in 2023 with the Impact Player rule).
 
@@ -144,6 +144,8 @@ Positive is always better than average, and every net stat sums to zero across t
 | `net_sr`, `net_avg`, `net_runs`, `outs_saved`, `net_dot_pct`, `net_boundary_pct` | `net_economy`, `runs_saved`, `net_wickets`, `net_avg`, `net_sr`, `net_dot_pct`, `net_boundary_pct` |
 
 `uv run pitchside baselines ipl -t bat_runs -p death` shows the adjustment factors.
+
+**Runs added** (`runs_added`, `runs_added_per_100`, `wicket_runs`) puts scoring and survival in one number: net runs plus every dismissal priced at what losing a wicket then costs the batting side (about 10 runs in the powerplay, 2 at the death), from a Duckworth–Lewis style run-production curve fitted per competition and rules era. For bowlers, their wickets earn the same price. It's the "Impact" of Himanish Ganjoo's primer, built on pitchside's own expectations.
 
 ### Small samples (`*_shrunk`)
 
@@ -317,5 +319,5 @@ GitHub Actions ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) ru
 
 - Match data: [Cricsheet](https://cricsheet.org), released under the [Open Data Commons Attribution License](https://opendatacommons.org/licenses/by/1-0/). pitchside downloads it to your machine and doesn't redistribute it; anything you publish from it (tables, charts, blog posts) should credit Cricsheet.
 - Batting hand and bowling style: [Wikipedia](https://www.wikipedia.org) infoboxes (text under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)), found via [Wikidata](https://www.wikidata.org) and each player's Cricinfo id in Cricsheet's people register. Fetched to a local CSV, not redistributed.
-- Ideas: net stats are inspired by the "true stats" of Jarrod Kimber and Good Areas. Conditioning the chase baseline on the target (the required-rate factor) came from Himanish Ganjoo's [T20 Metrics: A Primer](https://hganjoo.github.io/t20basics/), which uses the target as a baseline input in the second innings. The models here are pitchside's own.
+- Ideas: net stats are inspired by the "true stats" of Jarrod Kimber and Good Areas. Himanish Ganjoo's [T20 Metrics: A Primer](https://hganjoo.github.io/t20basics/) gave two of them: conditioning the chase baseline on the target (the required-rate factor), and pricing wickets in runs with a Duckworth–Lewis style curve (runs added, his "Impact"). The models here are pitchside's own.
 - Code: [MIT](LICENSE).

@@ -37,7 +37,7 @@ Workflow:
 
 Net stats (net_*) compare each ball with what an average player in the same competition would produce
 in the same situation (over, season, wickets down, setting/chasing, required rate, ground, rules era). Positive = better than
-average; exp_* is the expectation. Results flag small samples (low < 30 balls, small < 120): treat them
+average; exp_* is the expectation. runs_added = net runs with each wicket priced in runs. Results flag small samples (low < 30 balls, small < 120): treat them
 as noise.
 """
 

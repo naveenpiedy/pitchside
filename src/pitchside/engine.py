@@ -62,6 +62,7 @@ SELECT d.*, m.competition, m.season_year, m.match_date, m.venue, m.city, m.stage
        coalesce(bwl.bowl_type, 'unknown') AS bowl_type, bwl.bowl_subtype, bwl.bowling_arm,
        e.exp_bat_runs, e.exp_bat_out, e.exp_bat_dot, e.exp_bat_bnd,
        e.exp_bowl_runs, e.exp_bowl_wkt, e.exp_bowl_dot, e.exp_bowl_bnd,
+       e.wkt_value, e.exp_bat_wkt_runs, e.exp_bowl_wkt_runs,
        bo1.entry_legal_balls AS batter_entry_balls, bo1.entry_wickets AS batter_entry_wickets,
        bo2.entry_legal_balls AS non_striker_entry_balls, bo2.entry_wickets AS non_striker_entry_wickets,
        wp.wp_before, coalesce(wp.wpa, 0) AS wpa
@@ -98,14 +99,16 @@ SELECT batter_id AS player_id, {CONTEXT_COLS},
        is_four::INT AS fours, is_six::INT AS sixes,
        coalesce(out_player_id = batter_id, false)::INT AS out,
        exp_bat_runs AS exp_runs, exp_bat_out AS exp_out, exp_bat_dot AS exp_dot, exp_bat_bnd AS exp_bnd,
-       CASE WHEN is_ball_faced THEN wpa ELSE 0 END AS wpa  -- win probability added (A1)
+       CASE WHEN is_ball_faced THEN wpa ELSE 0 END AS wpa,  -- win probability added (A1)
+       -- runs added: what a dismissal on this ball costs the batting side, and its expectation
+       wkt_value, exp_bat_wkt_runs AS exp_wkt_runs
 FROM v_balls
 UNION ALL
 SELECT non_striker_id, {CONTEXT_COLS},
        batting_franchise, bowling_franchise, batting_team, bowling_team,
        non_striker_position, non_striker_hand,
        NULL, non_striker_entry_balls, non_striker_entry_balls // 6 + 1, non_striker_entry_wickets,
-       0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0
+       0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, wkt_value, 0
 FROM v_balls WHERE out_player_id = non_striker_id
 """
 
@@ -125,7 +128,8 @@ SELECT bowler_id AS player_id, {CONTEXT_COLS},
        is_four::INT AS fours, is_six::INT AS sixes,
        (wides > 0)::INT AS wides, (noballs > 0)::INT AS noballs,
        exp_bowl_runs AS exp_runs, exp_bowl_wkt AS exp_wkts, exp_bowl_dot AS exp_dot, exp_bowl_bnd AS exp_bnd,
-       -wpa AS wpa  -- the bowling side's win probability added
+       -wpa AS wpa,  -- the bowling side's win probability added
+       wkt_value, exp_bowl_wkt_runs AS exp_wkt_runs
 FROM v_balls
 """
 
@@ -385,6 +389,9 @@ def open_engine(competitions: list[str] | None = None, locked: bool = False,
         have = {r[0] for r in con.execute("SELECT table_name FROM duckdb_tables() WHERE database_name = ?",
                                           [t.key]).fetchall()}
         missing = {"expected", "winprob"} - have
+        if not missing and not con.execute("SELECT 1 FROM duckdb_columns() WHERE database_name = ? AND "
+                                           "table_name = 'expected' AND column_name = 'exp_bat_wkt_runs'", [t.key]).fetchone():
+            missing = {"expected.exp_bat_wkt_runs"}
         if missing:
             raise FileNotFoundError(f"Competition {t.key!r} lacks {', '.join(sorted(missing))}; "
                                     f"run `pitchside rebuild {t.key}`")

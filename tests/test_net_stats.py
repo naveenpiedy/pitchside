@@ -106,3 +106,35 @@ def test_ipl_net_stats_zero_sum_and_flat():
         # Expectations follow the game: death overs expect more runs than the powerplay.
         sr = {r["phase"]: r["exp_sr"] for r in aggregate(e, "batting", by=["phase"], metrics=["exp_sr"]).records()}
         assert sr["death"] > sr["middle"]
+
+
+def test_runs_added_parts(mini_engine):
+    q = mini_engine.con.execute
+    # The wicket price never rises with wickets lost, and nothing is left when all out.
+    assert q("SELECT count(*) FROM test.run_production a JOIN test.run_production b ON a.era = b.era "
+             "AND a.balls_left = b.balls_left AND b.wickets_down = a.wickets_down + 1 "
+             "WHERE b.runs > a.runs + 1e-9").fetchone()[0] == 0
+    assert q("SELECT max(runs) FROM test.run_production WHERE wickets_down = 10").fetchone()[0] == 0
+    assert q("SELECT min(wkt_value) FROM v_balls").fetchone()[0] >= 0
+    row = aggregate(mini_engine, "batting", players=["a3"], metrics=["net_runs", "wicket_runs", "runs_added"]).records()[0]
+    assert row["runs_added"] == pytest.approx(row["net_runs"] + row["wicket_runs"], abs=0.11)
+
+
+@pytest.mark.integration
+def test_ipl_runs_added_zero_sum_and_flat():
+    if not get_tournament("ipl").db_path.exists():
+        pytest.skip("IPL database not loaded")
+    with open_engine(["ipl"]) as e:
+        for role in ("batting", "bowling"):
+            league = aggregate(e, role, by=["season"], metrics=["runs_added"]).records()
+            assert all(abs(r["runs_added"]) < 0.2 for r in league), league
+            # Looser than net SR (< 3): the wicket price varies inside the factor cells, so e.g.
+            # batters in 15+-an-over chases, out at costlier moments than average, read ~-3.
+            # No ball_bucket: the settle factor stops at 11+, and batters past 30 balls are out
+            # ~500 times more than expected (IPL), which runs added prices at ~-8 per 100 balls.
+            for dim in ("wickets_down", "setting_chasing", "phase", "entry_bucket", "required_rate"):
+                league = aggregate(e, role, by=[dim], metrics=["balls", "runs_added_per_100"]).records()
+                assert all(abs(r["runs_added_per_100"]) < 4 for r in league if r["balls"] >= 5000), (dim, league)
+        # An early wicket costs more than a late one.
+        price = dict(e.con.execute("SELECT phase, avg(wkt_value) FROM v_balls GROUP BY 1").fetchall())
+        assert price["powerplay"] > price["middle"] > price["death"] > 0

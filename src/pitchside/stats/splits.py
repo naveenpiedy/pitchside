@@ -85,6 +85,11 @@ BATTING_METRICS: dict[str, tuple[str, bool]] = {  # name: (sql, higher_is_better
     "outs_saved": ("round(sum(exp_out) - sum(out), 1)", True),
     "net_dot_pct": ("round(100.0 * (sum(exp_dot) - sum(dot)) / nullif(sum(faced), 0), 1)", True),
     "net_boundary_pct": ("round(100.0 * (sum(fours) + sum(sixes) - sum(exp_bnd)) / nullif(sum(faced), 0), 1)", True),
+    # Runs added (model/runs_added.py): net runs plus outs saved priced at what a wicket costs then.
+    "wicket_runs": ("round(sum(exp_wkt_runs) - sum(wkt_value * out), 1)", True),
+    "runs_added": ("round(sum(runs) - sum(exp_runs) + (sum(exp_wkt_runs) - sum(wkt_value * out)), 1)", True),
+    "runs_added_per_100": ("round(100.0 * (sum(runs) - sum(exp_runs) + (sum(exp_wkt_runs) - sum(wkt_value * out))) "
+                           "/ nullif(sum(faced), 0), 2)", True),
     # Win probability added (A1), in wins: the change in the batting side's win chance on balls faced.
     "wpa": ("round(sum(wpa), 2)", True),
     "wpa_per_match": ("round(sum(wpa) / nullif(count(DISTINCT match_id), 0), 3)", True),
@@ -116,6 +121,11 @@ BOWLING_METRICS: dict[str, tuple[str, bool]] = {
     "net_sr": ("round(sum(balls) / nullif(sum(exp_wkts), 0) - sum(balls) / nullif(sum(wickets), 0), 1)", True),
     "net_dot_pct": ("round(100.0 * (sum(dot) - sum(exp_dot)) / nullif(sum(balls), 0), 1)", True),
     "net_boundary_pct": ("round(100.0 * (sum(exp_bnd) - sum(fours) - sum(sixes)) / nullif(sum(balls), 0), 1)", True),
+    # Runs added: runs saved plus net wickets priced at what each wicket cost the batting side.
+    "wicket_runs": ("round(sum(wkt_value * wickets) - sum(exp_wkt_runs), 1)", True),
+    "runs_added": ("round(sum(exp_runs) - sum(runs) + (sum(wkt_value * wickets) - sum(exp_wkt_runs)), 1)", True),
+    "runs_added_per_100": ("round(100.0 * (sum(exp_runs) - sum(runs) + (sum(wkt_value * wickets) - sum(exp_wkt_runs))) "
+                           "/ nullif(sum(balls), 0), 2)", True),
     # Win probability added (A1), in wins, from the bowling side's point of view.
     "wpa": ("round(sum(wpa), 2)", True),
     "wpa_per_match": ("round(sum(wpa) / nullif(count(DISTINCT match_id), 0), 3)", True),
@@ -152,13 +162,13 @@ DEFAULT_METRICS = {
 }
 RATE_METRICS = {"average", "strike_rate", "dot_pct", "boundary_pct", "balls_per_boundary", "economy",
                 "run_rate", "balls_per_wicket", "exp_sr", "net_sr", "exp_avg", "net_avg", "exp_economy",
-                "net_economy", "net_dot_pct", "net_boundary_pct"}
+                "net_economy", "net_dot_pct", "net_boundary_pct", "runs_added_per_100"}
 # Shown for net stats: actual, expected, difference.
 NET_METRICS = {
     "batting": ["innings", "balls", "runs", "exp_runs", "net_runs", "strike_rate", "exp_sr", "net_sr",
-                "average", "exp_avg", "net_avg"],
+                "average", "exp_avg", "net_avg", "wicket_runs", "runs_added"],
     "bowling": ["innings", "balls", "wickets", "exp_wickets", "net_wickets", "economy", "exp_economy",
-                "net_economy", "runs_saved", "average", "exp_avg", "net_avg"],
+                "net_economy", "runs_saved", "average", "exp_avg", "net_avg", "wicket_runs", "runs_added"],
 }
 
 # role: (source view, extra predicate, metric catalogue)

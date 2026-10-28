@@ -69,7 +69,7 @@ TARGETS: dict[str, tuple[str, str]] = {
 WICKET_BUCKETS = ["0", "1", "2", "3", "4", "5", "6", "7", "8+"]  # wickets down; 8 and 9 pooled
 SETTLE_BUCKETS = ["1-5", "6-10", "11+"]  # the striker's nth ball
 # Chase pressure: required runs per ball ÷ the season's runs per legal ball (IPL ~1.4, so 1.0 ≈ 8.4 an over).
-CHASE_BOUNDS = [0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 2.2]
+CHASE_BOUNDS = [0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 1.9, 2.2, 3.0]
 CHASE_BUCKETS = ["setting"] + [f"<{CHASE_BOUNDS[0]}"] + [
     f"{a}-{b}" for a, b in zip(CHASE_BOUNDS, CHASE_BOUNDS[1:])] + [f"{CHASE_BOUNDS[-1]}+"]
 

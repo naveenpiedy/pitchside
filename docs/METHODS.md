@@ -102,7 +102,7 @@ E[ball] = level(season, over) × situation(era, phase, wickets down, innings) ×
 | `level` | The competition's average rate for that over in that season. This is the era adjustment: 2010 balls are compared with 2010, 2026 with 2026. | All balls of that over number in that season (≈ 74 matches × 2 innings in a modern IPL season) |
 | `situation` | How much more or less is produced at this many wickets down (each of 0–7, then 8+ together), setting or chasing. | All seasons in the same **rules era** and phase. IPL eras: before 2023 and 2023+ (Impact Player). |
 | `settle` | How settled the striker is: balls 1–5 (new), 6–10 (getting in), 11+ (set). | Same rules era and phase. Stops at 11+ on purpose: batters who last 30+ balls are disproportionately the good ones, so a finer split would hide skill. |
-| `chase` | The tempo the target sets: required runs per ball ÷ the season's runs per legal ball, in buckets <0.6, 0.6–0.8, 0.8–0.95, 0.95–1.1, 1.1–1.3, 1.3–1.6, 1.6–2.2, 2.2+ (IPL 1.0 ≈ 8.4 an over). All first-innings balls share one `setting` cell. | Same rules era and phase. Relative to the season so a bucket means the same pressure in 2008 and 2026. See below. |
+| `chase` | The tempo the target sets: required runs per ball ÷ the season's runs per legal ball, in buckets <0.6, 0.6–0.8, 0.8–0.95, 0.95–1.1, 1.1–1.3, 1.3–1.6, 1.6–1.9, 1.9–2.2, 2.2–3.0, 3.0+ (IPL 1.0 ≈ 8.4 an over). All first-innings balls share one `setting` cell. | Same rules era and phase. Relative to the season so a bucket means the same pressure in 2008 and 2026. See below. |
 | `venue` | How much more or less this ground produces than the league, so a batter based at a flat ground isn't credited with the pitch (and a bowler at a slow one isn't credited with it either). | All matches at that ground in the same rules era. Grounds are canonicalised through `aliases.toml`, so a renamed ground is one cell. Shrunk with a prior of 2,400 balls (≈ 10 matches), not 50: see below. |
 | `scale` | A correction so that, within each season and over, expected totals equal actual totals exactly. | Each season–over |
 
@@ -118,21 +118,21 @@ where "predicted" uses the current values of everything else. The 50 is a prior 
 
 **Why the venue prior is 2,400 balls.** Half the balls at a ground are faced (and bowled) by the home side, so a ground's raw rate mixes the pitch with the home team's skill. Lightly shrunk, the venue factor would absorb that skill and erase it from the home players' net stats. With 2,400 pseudo-balls a ground keeps about half its observed effect after 10 matches and about 80% after 40. Example, IPL 2023+, batting runs: Chepauk 0.93, Ekana (Lucknow) 0.94, Wankhede 1.03, Chinnaswamy 1.02 (`pitchside baselines ipl` lists every ground).
 
-**Why a chase factor.** In a chase the target sets the tempo. Before this factor, league-wide IPL batters needing under 6 an over read about −13 net SR and those needing 12–15 between +10 and +16, in every phase: anchors who calmly finished small chases were marked down and anyone batting in a steep chase was flattered (bowlers the reverse). The dismissal factors move the same way: in the 2023+ death, wickets are ~35% likelier than the situation alone predicts once the chase needs 1.1–2.2× the season's rate. The factor stops at 2.2+ because hopeless chases ease off again (death 2023+: 1.08 at 1.6–2.2, 1.01 at 2.2+). Afterwards every well-populated required-rate bucket is within ±4 net SR (the `required_rate` split dimension shows it in runs per over).
+**Why a chase factor.** In a chase the target sets the tempo. Before this factor, league-wide IPL batters needing under 6 an over read about −13 net SR and those needing 12–15 between +10 and +16, in every phase: anchors who calmly finished small chases were marked down and anyone batting in a steep chase was flattered (bowlers the reverse). The dismissal factors move the same way: in the 2023+ death, wickets are ~35% likelier than the situation alone predicts once the chase needs 1.1–2.2× the season's rate. The top buckets are split finely because hopeless chases ease off again (death 2023+, runs: 1.07 at 2.2–3.0, 0.94 at 3.0+), and because dismissals rise steeply in between. Afterwards every well-populated required-rate bucket is within ±4 net SR (the `required_rate` split dimension shows it in runs per over).
 
 **Worked example: one ball.** IPL 2024, match 1422124, chase, ball 15.2 (2nd ball of the 16th over, the death). Kohli has faced 44 balls (settled), team 119/4 needing 58 off 29. Expected runs off the bat on this ball:
 
 ```
 level    (2024, over 16, runs per ball faced)   1.6186
-situation (2023+, death, 4 down, chasing)      × 1.0878
-settle    (2023+, death, 11+ balls)             × 1.0889
-chase     (2023+, death, required 1.1–1.3)      × 1.0246
-venue     (2023+, M Chinnaswamy Stadium)        × 1.0210
-scale     (2024, over 16)                       × 0.9522
-                                                = 1.9098 expected runs
+situation (2023+, death, 4 down, chasing)      × 1.0872
+settle    (2023+, death, 11+ balls)             × 1.0893
+chase     (2023+, death, required 1.1–1.3)      × 1.0231
+venue     (2023+, M Chinnaswamy Stadium)        × 1.0213
+scale     (2024, over 16)                       × 0.9524
+                                                = 1.9075 expected runs
 ```
 
-Needing 2.00 a ball when IPL 2024 scored 1.59 per legal ball puts the chase at 1.26× the season's rate, the 1.1–1.3 bucket. He hit Harshal Patel for 4, so this ball's contribution to his net runs is 4 − 1.91 = **+2.09**. His expected chance of dismissal on that ball was 0.0660.
+Needing 2.00 a ball when IPL 2024 scored 1.59 per legal ball puts the chase at 1.26× the season's rate, the 1.1–1.3 bucket. He hit Harshal Patel for 4, so this ball's contribution to his net runs is 4 − 1.91 = **+2.09**. His expected chance of dismissal on that ball was 0.0661.
 
 ### 4.2 Batting net stats
 
@@ -155,10 +155,10 @@ The dismissal expectation per ball counts any dismissal on that ball (including 
 
 | | Actual | Expected | Net |
 |---|---|---|---|
-| Runs, balls | 741 off 479 | 776.6 | net_runs = 741 − 776.6 = **−35.6** |
-| Strike rate | 100 × 741/479 = 154.70 | 100 × 776.6/479 = 162.12 | net_sr = **−7.42** |
+| Runs, balls | 741 off 479 | 776.7 | net_runs = 741 − 776.7 = **−35.7** |
+| Strike rate | 100 × 741/479 = 154.70 | 100 × 776.7/479 = 162.15 | net_sr = **−7.45** |
 | Outs | 12 | 23.7 | outs_saved = **+11.7** |
-| Average | 741/12 = 61.75 | 776.6/23.7 = 32.77 | net_avg = **+28.98** |
+| Average | 741/12 = 61.75 | 776.7/23.7 = 32.77 | net_avg = **+28.98** |
 
 Reading: he scored slower than an average batter would have on his balls (−7.4 per 100 balls), but was dismissed half as often as expected, so his average was 29 runs better than par. That's the classic anchor profile. Before the venue factor his net SR read −5.5: half his innings were at Chinnaswamy, and the extra runs that ground gives everyone were being credited to him.
 
@@ -181,11 +181,11 @@ net_boundary_pct = 100 × (exp_bnd − fours − sixes) / balls
 
 | | Actual | Expected | Net |
 |---|---|---|---|
-| Runs off 311 balls | 336 | 517.6 | runs_saved = **+181.6** |
-| Economy | 6 × 336/311 = 6.48 | 6 × 517.6/311 = 9.99 | net_economy = **+3.50** runs/over |
+| Runs off 311 balls | 336 | 517.4 | runs_saved = **+181.4** |
+| Economy | 6 × 336/311 = 6.48 | 6 × 517.4/311 = 9.98 | net_economy = **+3.50** runs/over |
 | Wickets | 20 | 16.6 | net_wickets = **+3.4** |
-| Average | 336/20 = 16.80 | 517.6/16.6 = 31.2 | net_avg = **+14.4** |
-| Strike rate | 311/20 = 15.6 | 311/16.6 = 18.7 | net_sr = **+3.2** |
+| Average | 336/20 = 16.80 | 517.4/16.6 = 31.2 | net_avg = **+14.3** |
+| Strike rate | 311/20 = 15.6 | 311/16.6 = 18.7 | net_sr = **+3.1** |
 
 ### 4.4 Properties you can rely on
 
@@ -195,6 +195,43 @@ net_boundary_pct = 100 × (exp_bnd − fours − sixes) / balls
 - **Era-aware.** Because `level` is per season, a 2010 batter and a 2026 batter are each measured against their own season.
 
 Both properties are enforced by tests; `pitchside baselines ipl` shows the factors.
+
+### 4.5 Runs added
+
+Net stats keep scoring and survival apart: Kohli's 2026 (`net_runs` +0.6, `outs_saved` +7.1) says "par scoring, rarely out", but not what that is worth. **Runs added** prices every dismissal in runs, by what losing a wicket then costs the batting side:
+
+```
+runs_added (batting)  = net_runs   + Σ ( E[wicket cost] − wicket_value × out )        = net_runs + wicket_runs
+runs_added (bowling)  = runs_saved + Σ ( wicket_value × wicket − E[wicket cost] )     = runs_saved + wicket_runs
+runs_added_per_100    = 100 × runs_added / balls
+```
+
+**Run production.** `R(b, w)` is the runs a side goes on to score with `b` legal balls left and `w` wickets down, fitted per rules era on first innings played out at full length (all 120 balls or all out, so every state's runs to come are observed), in the Duckworth–Lewis form
+
+```
+R(b, w) = Z_w × (1 − exp(−g × b / Z_w))
+```
+
+`Z_w` is what a side `w` down would make with unlimited balls; `g` is the scoring rate as balls run out, shared by every `w`. Sharing `g` matters: there are almost no innings 0 down with 12 balls left, and curves fitted freely per `w` crossed there, making late wickets free. An era's `Z_w` is shrunk towards the all-era value (scaled to the era's totals) by 3,000 states, and may not rise with `w`. The fit is within about 2 runs of the observed average in every well-populated cell (IPL, by era, wickets band and balls band). `run_production` holds the table; IPL 2023+: `R(120, 0)` = 189, `R(84, 2)` = 131, `R(36, 5)` = 58.
+
+**Wicket value.** A dismissal on a ball costs `R(b′, w) − R(b′, w + 1)`, with `b′` the balls left after it, times the venue's run factor (the shrunk `bowl_runs` venue factor of §4.1) and a season scale so that complete first innings average their projection. It is about 10 runs in the powerplay, 7 in the middle overs and 2 at the death. Chases use the same curve: this prices a wicket by what it does to run-making; what it does to the result is WPA's job (§6).
+
+**Expected wicket cost.** Each ball's expected cost is `wicket_value × exp_out` (`exp_wkts` for bowlers), rescaled per season–over so that it sums to the actual cost there, as `scale` does in §4.1. The rescale matters: dismissal chances match actual dismissals on each factor's cells, but the price varies inside them, and without it league seasons drifted by ±130 runs.
+
+**Worked example: one dismissal.** IPL 2026, match 1527684, first innings, ball 4.3, Kohli out at 37/0 (Chinnaswamy). After the ball 93 balls are left: `R(93, 0) − R(93, 1)` = 159.07 − 149.75 = 9.32; × venue 1.0205 × season 2026 scale 1.038 = **9.87 runs**. His expected dismissal chance on that ball was 0.037, an expected cost of 0.35 runs, so the ball's wicket_runs is 0.35 − 9.87 = **−9.52** (plus the net runs of a dot ball).
+
+**Worked example: a season.** IPL 2026:
+
+| | net_runs | wicket_runs | runs_added | per 100 balls |
+|---|---|---|---|---|
+| Kohli, 675 off 407, out 12 times (19.1 expected) | +0.6 | +66.9 | **+67.5** | +16.6 |
+| Abhishek Sharma, 563 off 275, out 14 times (12.1 expected) | +88.7 | −32.1 | **+56.6** | +20.6 |
+
+Kohli's value is almost all survival; Abhishek's is scoring, partly paid back in wickets.
+
+**Relation to Impact.** Himanish Ganjoo's [T20 Metrics primer](https://hganjoo.github.io/t20basics/) defines a ball's Impact as runs + `R(after) − R(before)` on a Duckworth–Lewis curve. Since on average `R(b, w) = E[runs] + R(b − 1, w) − p × value`, that expands to (runs − expected runs) + wicket value × (p − wicket): the same as runs added, but with the run curve's own expectations. Runs added uses the net-stat expectations instead (settle, chase pressure, venue), so it inherits their context.
+
+**Properties.** Zero-sum per season for batting and for bowling. Flat to within about ±3 per 100 balls by phase, wickets down, setting/chasing, required rate and entry point (tested at ±4). Two known gaps: batters in chases needing 15+ an over read about −2.5, out at costlier moments than their cells' average; and batters past their 30th ball are out about 500 times more than expected over IPL history (the settle factor stops at 11+), which runs added prices at about −8.6 per 100 balls. That second gap is in `outs_saved` too; runs added only makes it visible.
 
 ---
 
@@ -504,6 +541,7 @@ Composed entirely from the pieces above; nothing new is modelled.
 | Per-ball expectation: level | One competition, one season, one over number | At load |
 | Per-ball expectation: situation, settle and chase factors | One competition, one rules era, one phase | At load |
 | Per-ball expectation: venue factor | One competition, one rules era, one ground | At load |
+| Run production `R(b, w)` (wicket value) | One competition, one rules era (shrunk to all eras), complete first innings | At load |
 | Shrinkage `k` | One competition, all player-seasons with 60+ balls | At load |
 | Win-probability model | One competition, all seasons; era context via season runs per ball | At load |
 | End-of-chase ball outcomes | One competition's chase balls with ≤ 24 left; per rules era and ground, shrunk | At load |
