@@ -89,7 +89,8 @@ def test_ipl_net_stats_zero_sum_and_flat():
         # Situation-adjusted: league net SR is ~flat across wickets down and setting/chasing.
         # (Wickets 8 and 9 share a factor, so only cells with real volume are checked.)
         # ball_bucket / entry_bucket: new and late-arriving batters aren't penalised for being new.
-        for dim in ("wickets_down", "setting_chasing", "phase", "ball_bucket", "entry_bucket"):
+        # required_rate: a chaser isn't judged on the tempo the target sets (unadjusted, -13 to +15).
+        for dim in ("wickets_down", "setting_chasing", "phase", "ball_bucket", "entry_bucket", "required_rate"):
             league = aggregate(e, "batting", by=[dim], metrics=["balls", "net_sr"]).records()
             assert all(abs(r["net_sr"]) < 3 for r in league if r["balls"] >= 5000), league
             league = aggregate(e, "bowling", by=[dim], metrics=["balls", "net_economy"]).records()

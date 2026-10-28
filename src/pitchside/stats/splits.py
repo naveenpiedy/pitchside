@@ -33,6 +33,13 @@ DIMENSIONS: dict[str, str] = {
     "ball_bucket": ("CASE WHEN nth_ball <= 5 THEN '01-05' WHEN nth_ball <= 10 THEN '06-10' "
                     "WHEN nth_ball <= 20 THEN '11-20' WHEN nth_ball <= 30 THEN '21-30' ELSE '31+' END"),
     "wickets_down": "wickets_before",
+    # Chases only: runs required per over before the ball.
+    "required_rate": ("CASE WHEN innings_no = 1 THEN 'setting' WHEN balls_remaining = 0 THEN '15+' "
+                      "WHEN 6.0 * runs_required / balls_remaining < 6 THEN '00-06' "
+                      "WHEN 6.0 * runs_required / balls_remaining < 8 THEN '06-08' "
+                      "WHEN 6.0 * runs_required / balls_remaining < 10 THEN '08-10' "
+                      "WHEN 6.0 * runs_required / balls_remaining < 12 THEN '10-12' "
+                      "WHEN 6.0 * runs_required / balls_remaining < 15 THEN '12-15' ELSE '15+' END"),
     # Entry point (A4): when the batter walked in. Openers arrive at ball 0.
     "entry_phase": ENTRY_PHASE_SQL,
     "entry_bucket": ("CASE WHEN entry_balls = 0 THEN '00 opener' WHEN entry_over <= 6 THEN '01-06' "
@@ -51,7 +58,7 @@ ORDERED = {
     "entry_phase": "CASE entry_phase WHEN 'opener' THEN 0 WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END",
     "entry_bucket": "entry_bucket", "entry_over": "entry_over", "entry_wickets": "entry_wickets",
     "phase": "CASE phase WHEN 'powerplay' THEN 1 WHEN 'middle' THEN 2 ELSE 3 END",
-    "setting_chasing": "min(innings_no)", "wickets_down": "wickets_down",
+    "setting_chasing": "min(innings_no)", "wickets_down": "wickets_down", "required_rate": "required_rate",
 }
 
 BATTING_METRICS: dict[str, tuple[str, bool]] = {  # name: (sql, higher_is_better)

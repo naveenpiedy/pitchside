@@ -86,7 +86,7 @@ boundary_pct = 100 × (fours + sixes conceded) / balls
 
 ## 4. Net stats
 
-Net stats compare each player with what an average player would have produced on **the same balls**: same competition, season, over, wickets down, innings, ground, and how settled the batter was. Positive always means better than average. The idea of judging players against an expectation for the same balls is inspired by the "true stats" of Jarrod Kimber and Good Areas; the model below is pitchside's own.
+Net stats compare each player with what an average player would have produced on **the same balls**: same competition, season, over, wickets down, innings, required rate in a chase, ground, and how settled the batter was. Positive always means better than average. The idea of judging players against an expectation for the same balls is inspired by the "true stats" of Jarrod Kimber and Good Areas; the model below is pitchside's own.
 
 ### 4.1 The expected value of each ball
 
@@ -94,7 +94,7 @@ For each ball and each of eight targets (batter: runs, dismissal, dot, boundary;
 
 ```
 E[ball] = level(season, over) × situation(era, phase, wickets down, innings) × settle(era, phase, balls faced)
-          × venue(era, ground) × scale(season, over)
+          × chase(era, phase, required rate) × venue(era, ground) × scale(season, over)
 ```
 
 | Piece | What it captures | Estimated on |
@@ -102,12 +102,13 @@ E[ball] = level(season, over) × situation(era, phase, wickets down, innings) ×
 | `level` | The competition's average rate for that over in that season. This is the era adjustment: 2010 balls are compared with 2010, 2026 with 2026. | All balls of that over number in that season (≈ 74 matches × 2 innings in a modern IPL season) |
 | `situation` | How much more or less is produced at this many wickets down (each of 0–7, then 8+ together), setting or chasing. | All seasons in the same **rules era** and phase. IPL eras: before 2023 and 2023+ (Impact Player). |
 | `settle` | How settled the striker is: balls 1–5 (new), 6–10 (getting in), 11+ (set). | Same rules era and phase. Stops at 11+ on purpose: batters who last 30+ balls are disproportionately the good ones, so a finer split would hide skill. |
+| `chase` | The tempo the target sets: required runs per ball ÷ the season's runs per legal ball, in buckets <0.6, 0.6–0.8, 0.8–0.95, 0.95–1.1, 1.1–1.3, 1.3–1.6, 1.6–2.2, 2.2+ (IPL 1.0 ≈ 8.4 an over). All first-innings balls share one `setting` cell. | Same rules era and phase. Relative to the season so a bucket means the same pressure in 2008 and 2026. See below. |
 | `venue` | How much more or less this ground produces than the league, so a batter based at a flat ground isn't credited with the pitch (and a bowler at a slow one isn't credited with it either). | All matches at that ground in the same rules era. Grounds are canonicalised through `aliases.toml`, so a renamed ground is one cell. Shrunk with a prior of 2,400 balls (≈ 10 matches), not 50: see below. |
 | `scale` | A correction so that, within each season and over, expected totals equal actual totals exactly. | Each season–over |
 
 Shortened innings are mapped onto the 20-over scale (`effective over = floor(over × 120 / allocated balls)`), so the last over of a 5-over game is compared with other last overs.
 
-**Fitting.** The factors are estimated by iterative proportional fitting: starting with all factors at 1, the situation, settle and venue factors and the scales are re-estimated in turn (10 rounds) until expected matches actual on every margin. Each factor is
+**Fitting.** The factors are estimated by iterative proportional fitting: starting with all factors at 1, the situation, settle, chase and venue factors and the scales are re-estimated in turn (10 rounds) until expected matches actual on every margin. Each factor is
 
 ```
 factor(cell) = (Σ actual + 50 × r̄) / (Σ predicted + 50 × r̄)        r̄ = Σ predicted / balls in the cell
@@ -117,18 +118,21 @@ where "predicted" uses the current values of everything else. The 50 is a prior 
 
 **Why the venue prior is 2,400 balls.** Half the balls at a ground are faced (and bowled) by the home side, so a ground's raw rate mixes the pitch with the home team's skill. Lightly shrunk, the venue factor would absorb that skill and erase it from the home players' net stats. With 2,400 pseudo-balls a ground keeps about half its observed effect after 10 matches and about 80% after 40. Example, IPL 2023+, batting runs: Chepauk 0.93, Ekana (Lucknow) 0.94, Wankhede 1.03, Chinnaswamy 1.02 (`pitchside baselines ipl` lists every ground).
 
+**Why a chase factor.** In a chase the target sets the tempo. Before this factor, league-wide IPL batters needing under 6 an over read about −13 net SR and those needing 12–15 between +10 and +16, in every phase: anchors who calmly finished small chases were marked down and anyone batting in a steep chase was flattered (bowlers the reverse). The dismissal factors move the same way: in the 2023+ death, wickets are ~35% likelier than the situation alone predicts once the chase needs 1.1–2.2× the season's rate. The factor stops at 2.2+ because hopeless chases ease off again (death 2023+: 1.08 at 1.6–2.2, 1.01 at 2.2+). Afterwards every well-populated required-rate bucket is within ±4 net SR (the `required_rate` split dimension shows it in runs per over).
+
 **Worked example: one ball.** IPL 2024, match 1422124, chase, ball 15.2 (2nd ball of the 16th over, the death). Kohli has faced 44 balls (settled), team 119/4 needing 58 off 29. Expected runs off the bat on this ball:
 
 ```
 level    (2024, over 16, runs per ball faced)   1.6186
-situation (2023+, death, 4 down, chasing)      × 1.0893
-settle    (2023+, death, 11+ balls)             × 1.0879
-venue     (2023+, M Chinnaswamy Stadium)        × 1.0183
-scale     (2024, over 16)                       × 0.9577
-                                                = 1.8706 expected runs
+situation (2023+, death, 4 down, chasing)      × 1.0878
+settle    (2023+, death, 11+ balls)             × 1.0889
+chase     (2023+, death, required 1.1–1.3)      × 1.0246
+venue     (2023+, M Chinnaswamy Stadium)        × 1.0210
+scale     (2024, over 16)                       × 0.9522
+                                                = 1.9098 expected runs
 ```
 
-He hit Harshal Patel for 4, so this ball's contribution to his net runs is 4 − 1.87 = **+2.13**. His expected chance of dismissal on that ball was 0.0506.
+Needing 2.00 a ball when IPL 2024 scored 1.59 per legal ball puts the chase at 1.26× the season's rate, the 1.1–1.3 bucket. He hit Harshal Patel for 4, so this ball's contribution to his net runs is 4 − 1.91 = **+2.09**. His expected chance of dismissal on that ball was 0.0660.
 
 ### 4.2 Batting net stats
 
@@ -151,12 +155,12 @@ The dismissal expectation per ball counts any dismissal on that ball (including 
 
 | | Actual | Expected | Net |
 |---|---|---|---|
-| Runs, balls | 741 off 479 | 778.6 | net_runs = 741 − 778.6 = **−37.6** |
-| Strike rate | 100 × 741/479 = 154.70 | 100 × 778.6/479 = 162.54 | net_sr = **−7.84** |
-| Outs | 12 | 24.0 | outs_saved = **+12.0** |
-| Average | 741/12 = 61.75 | 778.6/24.0 = 32.51 | net_avg = **+29.24** |
+| Runs, balls | 741 off 479 | 776.6 | net_runs = 741 − 776.6 = **−35.6** |
+| Strike rate | 100 × 741/479 = 154.70 | 100 × 776.6/479 = 162.12 | net_sr = **−7.42** |
+| Outs | 12 | 23.7 | outs_saved = **+11.7** |
+| Average | 741/12 = 61.75 | 776.6/23.7 = 32.77 | net_avg = **+28.98** |
 
-Reading: he scored slower than an average batter would have on his balls (−7.8 per 100 balls), but was dismissed half as often as expected, so his average was 29 runs better than par. That's the classic anchor profile. Before the venue factor his net SR read −5.5: half his innings were at Chinnaswamy, and the extra runs that ground gives everyone were being credited to him.
+Reading: he scored slower than an average batter would have on his balls (−7.4 per 100 balls), but was dismissed half as often as expected, so his average was 29 runs better than par. That's the classic anchor profile. Before the venue factor his net SR read −5.5: half his innings were at Chinnaswamy, and the extra runs that ground gives everyone were being credited to him.
 
 ### 4.3 Bowling net stats
 
@@ -177,16 +181,16 @@ net_boundary_pct = 100 × (exp_bnd − fours − sixes) / balls
 
 | | Actual | Expected | Net |
 |---|---|---|---|
-| Runs off 311 balls | 336 | 521.7 | runs_saved = **+185.7** |
-| Economy | 6 × 336/311 = 6.48 | 6 × 521.7/311 = 10.06 | net_economy = **+3.58** runs/over |
-| Wickets | 20 | 17.0 | net_wickets = **+3.0** |
-| Average | 336/20 = 16.80 | 521.7/17.0 = 30.6 | net_avg = **+13.8** |
-| Strike rate | 311/20 = 15.6 | 311/17.0 = 18.3 | net_sr = **+2.7** |
+| Runs off 311 balls | 336 | 517.6 | runs_saved = **+181.6** |
+| Economy | 6 × 336/311 = 6.48 | 6 × 517.6/311 = 9.99 | net_economy = **+3.50** runs/over |
+| Wickets | 20 | 16.6 | net_wickets = **+3.4** |
+| Average | 336/20 = 16.80 | 517.6/16.6 = 31.2 | net_avg = **+14.4** |
+| Strike rate | 311/20 = 15.6 | 311/16.6 = 18.7 | net_sr = **+3.2** |
 
 ### 4.4 Properties you can rely on
 
 - **Zero-sum.** Across all players in a season (and within every season–over), net runs, net outs, net dots and net boundaries sum to exactly zero, for batting and for bowling. An average player scores 0.
-- **Flat by situation.** League-wide, net stats are about 0 for every phase, wickets-down value, setting/chasing, balls-faced bucket and entry point. By ground they are close to 0 but not exactly, because the venue factor is shrunk: since 2023 Chepauk and Ekana still read about −3.5 net SR (−12 without the factor). Batting positions 9–11 stay negative, because tailenders really are worse batters.
+- **Flat by situation.** League-wide, net stats are about 0 for every phase, wickets-down value, setting/chasing, required-rate bucket, balls-faced bucket and entry point. By ground they are close to 0 but not exactly, because the venue factor is shrunk: since 2023 Chepauk and Ekana still read about −3.5 net SR (−12 without the factor). Batting positions 9–11 stay negative, because tailenders really are worse batters.
 - **Venue factors span a rules era, not a season.** In one season a ground hosts about 7 matches, and its scoring compared with expectation swings by about ±6–11 net SR (root-mean-square per season, 2023–26), e.g. Eden Gardens +11.3 in 2024, −13.5 in 2026. Those swings do not carry over: across 2018–26, a ground's miss in one season has a correlation of −0.13 with its miss the next season (39 pairs). So they are noise (dew, a few extreme matches, the home side's form), not pitches changing character, and fitting per season would chase them. A batter who played a lot at a ground in one odd season carries some of that in that season's net stats; over several seasons it averages out.
 - **Era-aware.** Because `level` is per season, a 2010 batter and a 2026 batter are each measured against their own season.
 
@@ -498,7 +502,7 @@ Composed entirely from the pieces above; nothing new is modelled.
 | Quantity | Estimated on | When |
 |---|---|---|
 | Per-ball expectation: level | One competition, one season, one over number | At load |
-| Per-ball expectation: situation and settle factors | One competition, one rules era, one phase | At load |
+| Per-ball expectation: situation, settle and chase factors | One competition, one rules era, one phase | At load |
 | Per-ball expectation: venue factor | One competition, one rules era, one ground | At load |
 | Shrinkage `k` | One competition, all player-seasons with 60+ balls | At load |
 | Win-probability model | One competition, all seasons; era context via season runs per ball | At load |
