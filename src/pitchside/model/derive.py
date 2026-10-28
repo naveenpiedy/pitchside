@@ -11,6 +11,7 @@ import duckdb
 
 from pitchside.config import load_aliases
 from pitchside.model.baselines import build_expectations
+from pitchside.model.runs_added import build_runs_added
 from pitchside.model.shrinkage import build_priors
 from pitchside.model.winprob import build_winprob
 
@@ -162,5 +163,6 @@ def refresh(con: duckdb.DuckDBPyConnection, rule_eras: tuple[int, ...] = ()) -> 
         con.execute(sql)
     venues = load_aliases()["venues"]
     build_expectations(con, rule_eras, venues)
+    build_runs_added(con, rule_eras, venues)
     build_priors(con)
     build_winprob(con, rule_eras, venues)
