@@ -1,6 +1,6 @@
 # How pitchside calculates things
 
-Every formula behind the numbers, what slice of data each piece is estimated on, and a worked example with real IPL numbers. Examples come from the database as built on 2026-10-22 (IPL 2008–2026); they will drift slightly as new matches arrive.
+Every formula behind the numbers, what slice of data each piece is estimated on, and a worked example with real IPL numbers. Examples come from the database as built on 2026-10-28 (IPL 2008–2026); they will drift slightly as new matches arrive.
 
 **Contents**
 
@@ -116,7 +116,7 @@ factor(cell) = (Σ actual + 50 × r̄) / (Σ predicted + 50 × r̄)        r̄ =
 
 where "predicted" uses the current values of everything else. The 50 is a prior of 50 balls at factor 1, so thin cells (8+ wickets down in the death in one era) can't swing wildly. The last step is always the rescale, which guarantees the zero-sum property below.
 
-**Why the venue prior is 2,400 balls.** Half the balls at a ground are faced (and bowled) by the home side, so a ground's raw rate mixes the pitch with the home team's skill. Lightly shrunk, the venue factor would absorb that skill and erase it from the home players' net stats. With 2,400 pseudo-balls a ground keeps about half its observed effect after 10 matches and about 80% after 40. Example, IPL 2023+, batting runs: Chepauk 0.93, Ekana (Lucknow) 0.94, Wankhede 1.03, Chinnaswamy 1.02 (`pitchside baselines ipl` lists every ground).
+**Why the venue prior is 2,400 balls.** Half the balls at a ground are faced (and bowled) by the home side, so a ground's raw rate mixes the pitch with the home team's skill. Lightly shrunk, the venue factor would absorb that skill and erase it from the home players' net stats. With 2,400 pseudo-balls a ground keeps about half its observed effect after 10 matches and about 80% after 40. Example, IPL 2023+, batting runs: Chepauk 0.94, Ekana (Lucknow) 0.95, Wankhede 1.03, Chinnaswamy 1.02 (`pitchside baselines ipl` lists every ground).
 
 **Why a chase factor.** In a chase the target sets the tempo. Before this factor, league-wide IPL batters needing under 6 an over read about −13 net SR and those needing 12–15 between +10 and +16, in every phase: anchors who calmly finished small chases were marked down and anyone batting in a steep chase was flattered (bowlers the reverse). The dismissal factors move the same way: in the 2023+ death, wickets are ~35% likelier than the situation alone predicts once the chase needs 1.1–2.2× the season's rate. The top buckets are split finely because hopeless chases ease off again (death 2023+, runs: 1.07 at 2.2–3.0, 0.94 at 3.0+), and because dismissals rise steeply in between. Afterwards every well-populated required-rate bucket is within ±4 net SR (the `required_rate` split dimension shows it in runs per over).
 
@@ -156,11 +156,11 @@ The dismissal expectation per ball counts any dismissal on that ball (including 
 | | Actual | Expected | Net |
 |---|---|---|---|
 | Runs, balls | 741 off 479 | 776.7 | net_runs = 741 − 776.7 = **−35.7** |
-| Strike rate | 100 × 741/479 = 154.70 | 100 × 776.7/479 = 162.15 | net_sr = **−7.45** |
+| Strike rate | 100 × 741/479 = 154.70 | 100 × 776.7/479 = 162.16 | net_sr = **−7.46** |
 | Outs | 12 | 23.7 | outs_saved = **+11.7** |
 | Average | 741/12 = 61.75 | 776.7/23.7 = 32.77 | net_avg = **+28.98** |
 
-Reading: he scored slower than an average batter would have on his balls (−7.4 per 100 balls), but was dismissed half as often as expected, so his average was 29 runs better than par. That's the classic anchor profile. Before the venue factor his net SR read −5.5: half his innings were at Chinnaswamy, and the extra runs that ground gives everyone were being credited to him.
+Reading: he scored slower than an average batter would have on his balls (−7.5 per 100 balls), but was dismissed half as often as expected, so his average was 29 runs better than par. That's the classic anchor profile. Before the venue factor his net SR read −5.5: half his innings were at Chinnaswamy, and the extra runs that ground gives everyone were being credited to him.
 
 ### 4.3 Bowling net stats
 
@@ -190,8 +190,8 @@ net_boundary_pct = 100 × (exp_bnd − fours − sixes) / balls
 ### 4.4 Properties you can rely on
 
 - **Zero-sum.** Across all players in a season (and within every season–over), net runs, net outs, net dots and net boundaries sum to exactly zero, for batting and for bowling. An average player scores 0.
-- **Flat by situation.** League-wide, net stats are about 0 for every phase, wickets-down value, setting/chasing, required-rate bucket, balls-faced bucket and entry point. By ground they are close to 0 but not exactly, because the venue factor is shrunk: since 2023 Chepauk and Ekana still read about −3.5 net SR (−12 without the factor). Batting positions 9–11 stay negative, because tailenders really are worse batters.
-- **Venue factors span a rules era, not a season.** In one season a ground hosts about 7 matches, and its scoring compared with expectation swings by about ±6–11 net SR (root-mean-square per season, 2023–26), e.g. Eden Gardens +11.3 in 2024, −13.5 in 2026. Those swings do not carry over: across 2018–26, a ground's miss in one season has a correlation of −0.13 with its miss the next season (39 pairs). So they are noise (dew, a few extreme matches, the home side's form), not pitches changing character, and fitting per season would chase them. A batter who played a lot at a ground in one odd season carries some of that in that season's net stats; over several seasons it averages out.
+- **Flat by situation.** League-wide, net stats are about 0 for every phase, wickets-down value, setting/chasing, required-rate bucket, balls-faced bucket and entry point. By ground they are close to 0 but not exactly, because the venue factor is shrunk: since 2023 Chepauk and Ekana still read about −3 net SR (−12 without the factor). Batting positions 9–11 stay negative, because tailenders really are worse batters.
+- **Venue factors span a rules era, not a season.** In one season a ground hosts about 7 matches, and its scoring compared with expectation swings by about ±6–9 net SR (root-mean-square per season, 2023–26), e.g. Eden Gardens +10.4 in 2024, −13.4 in 2026. Those swings do not carry over: across 2018–26, a ground's miss in one season has a correlation of −0.06 with its miss the next season (39 pairs). So they are noise (dew, a few extreme matches, the home side's form), not pitches changing character, and fitting per season would chase them. A batter who played a lot at a ground in one odd season carries some of that in that season's net stats; over several seasons it averages out.
 - **Era-aware.** Because `level` is per season, a 2010 batter and a 2026 batter are each measured against their own season.
 
 Both properties are enforced by tests; `pitchside baselines ipl` shows the factors.
@@ -262,26 +262,26 @@ k   = σ² / τ²                  clamped to [20, 5000]
 | Batting runs per ball | 85 | | Bowling runs per ball | 93 |
 | Batting dot rate | 83 | | Bowling dot rate | 70 |
 | Batting boundary rate | 88 | | Bowling wicket rate | 1,417 |
-| Batting dismissal rate | 2,387 | | Bowling net runs per ball | 277 |
+| Batting dismissal rate | 2,387 | | Bowling net runs per ball | 287 |
 | Batting net runs per ball | 177 | | Bowling net wickets per ball | 5,000 (cap) |
-| Batting net dismissals per ball | 1,083 | | | |
+| Batting net dismissals per ball | 1,061 | | | |
 
 Dismissal and wicket rates need over 1,000 balls to become half-reliable: in T20 they are mostly noise, which is a property of the data. Net wickets hit the cap: at season level, wicket-taking beyond what the situation explains is barely detectable.
 
 **Which metrics.** Batting: `strike_rate_shrunk`, `average_shrunk` (shrunk runs per ball ÷ shrunk dismissals per ball), `dot_pct_shrunk`, `boundary_pct_shrunk`, `net_sr_shrunk`, `net_avg_shrunk`. Bowling: `economy_shrunk`, `average_shrunk`, `strike_rate_shrunk`, `dot_pct_shrunk`, `net_economy_shrunk`, `net_wickets_shrunk` (shrunk per-ball rate × balls). Net stats shrink the *difference from expectation*; the expectation itself (the player's context) is never shrunk.
 
-**Worked example: Kohli, 2024.** Net runs −37.55 off 479 balls; the 2024 population net rate is 0 by construction; k = 177.2:
+**Worked example: Kohli, 2024.** Net runs −35.72 off 479 balls; the 2024 population net rate is 0 by construction; k = 177.2:
 
 ```
-net_sr_shrunk = 100 × (−37.55 + 177.2 × 0) / (479 + 177.2) = −5.72     (raw −7.84)
+net_sr_shrunk = 100 × (−35.72 + 177.2 × 0) / (479 + 177.2) = −5.44     (raw −7.46)
 ```
 
 **Small vs large sample, 2026:**
 
 | Player | Balls | Net SR (raw) | Net SR (shrunk) |
 |---|---|---|---|
-| Vaibhav Suryavanshi | 327 | +71.89 | **+46.62** |
-| Azmatullah Omarzai | 27 | +43.80 | **+5.79** |
+| Vaibhav Suryavanshi | 327 | +70.60 | **+45.79** |
+| Azmatullah Omarzai | 27 | +42.38 | **+5.60** |
 
 Both had remarkable raw numbers; only one had enough balls to keep most of it.
 
