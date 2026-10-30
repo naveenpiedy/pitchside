@@ -107,6 +107,17 @@ uv run pitchside scorecard ipl 1426312 --partnerships
 
 ---
 
+## How it fits together
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <img src="docs/architecture.svg" alt="pitchside architecture: Cricsheet and Wikipedia feed the ETL, which writes one DuckDB file per competition plus a registry; models are rebuilt after every load; the engine attaches the files read-only and builds views; analyses serve the CLI and the MCP server" width="100%">
+</picture>
+
+Loading derives every bit of ball-order state once and rebuilds the models (baselines, runs added, shrinkage priors, win probability) after each load. Every CLI command and MCP call opens the databases read-only and closes them again, so a sync can run while an AI client is connected. The source is [docs/architecture.excalidraw](docs/architecture.excalidraw).
+
+---
+
 ## Concepts
 
 The short version is below; [docs/METHODS.md](docs/METHODS.md) has every formula, what slice of data each piece is estimated on, and worked examples with real numbers.
@@ -308,12 +319,7 @@ uv run pytest                       # unit tests + IPL integration tests (skippe
 
 GitHub Actions ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) runs the test suite on Ubuntu and Windows for every push to `master` and every pull request. CI has no Cricsheet data, so the IPL integration tests skip there: run `uv run pytest` locally with IPL loaded before merging changes to parsing, baselines or win probability.
 
-- `src/pitchside/etl/` — download, parse, load, sync, quality checks, attributes, schedule
-- `src/pitchside/model/` — schema, derived tables, net-stat baselines, shrinkage priors, win probability
-- `src/pitchside/engine.py` — query engine over every loaded competition
-- `src/pitchside/stats/` — filters, splits/aggregation, players, teams, archetypes, impact, scorecards
-- `src/pitchside/tools.py`, `mcp_server.py` — AI tools and the MCP server
-- `AGENTS.md` — conventions and invariants for anyone (or any AI) changing the code
+The code layout follows [the diagram](#how-it-fits-together): `etl/`, `model/`, `engine.py`, `stats/`, then `tools.py` and `mcp_server.py`. [AGENTS.md](AGENTS.md) has the conventions and invariants for anyone (or any AI) changing the code.
 
 ---
 
