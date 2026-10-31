@@ -30,7 +30,7 @@ pitchside = "pitchside.cli:app"
 pitchside-mcp = "pitchside.mcp_server:main"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=9.2.0"]
 
 [build-system]
 requires = ["hatchling"]
