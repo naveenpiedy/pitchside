@@ -13,3 +13,11 @@ event = "Indian Premier League"
 format = "T20"
 status = "ongoing"
 rule_eras = [2023]  # Impact Player rule
+
+[bbl]
+name = "Big Bash League"
+cricsheet = "bbl_male"
+event = "Big Bash League"
+format = "T20"
+status = "ongoing"
+rule_eras = [2020]  # Power Surge, X-Factor sub, Bash Boost (BBL|10)

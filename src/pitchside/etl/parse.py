@@ -133,17 +133,28 @@ def parse_match(match_id: str, data: dict, competition: str, source_file: str | 
             out.players[pid(name)] = name
 
     # A match shortened before the start (rain, no DLS) gives both sides the chase's reduced overs.
+    # A first innings that bowled past that allocation was cut mid-match instead (e.g. a
+    # revised target in a game later abandoned: no result, so no DLS method recorded).
     reduced_overs = None
     if not info.get("outcome", {}).get("method"):
         for inn in data.get("innings", []):
             t = (inn.get("target") or {}).get("overs")
             if t is not None and not inn.get("super_over") and float(t) < overs:
                 reduced_overs = float(t)
+        innings = data.get("innings", [])
+        if reduced_overs is not None and innings and \
+                _legal_balls(innings[0]) > overs_to_balls(reduced_overs, bpo):
+            reduced_overs = None
 
     for innings_no, inn in enumerate(data.get("innings", []), start=1):
         _parse_innings(out, match_id, innings_no, inn, teams, overs, bpo, pid, reduced_overs)
 
     return out
+
+
+def _legal_balls(inn: dict) -> int:
+    return sum(1 for o in inn.get("overs", []) for d in o["deliveries"]
+               if not {"wides", "noballs"} & d.get("extras", {}).keys())
 
 
 def powerplay_overs(inn: dict) -> int | None:
