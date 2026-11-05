@@ -21,6 +21,15 @@
 "Rising Pune Supergiant" = ["Rising Pune Supergiants", "RPS"]
 "Royal Challengers Bengaluru" = ["Royal Challengers Bangalore", "RCB"]
 "Sunrisers Hyderabad" = ["SRH"]
+# BBL
+"Adelaide Strikers" = ["STR"]
+"Brisbane Heat" = ["HEA"]
+"Hobart Hurricanes" = ["HUR"]
+"Melbourne Renegades" = ["REN"]
+"Melbourne Stars" = ["STA"]
+"Perth Scorchers" = ["SCO"]
+"Sydney Sixers" = ["SIX"]
+"Sydney Thunder" = ["THU"]
 
 [venues]
 "Arun Jaitley Stadium, Delhi" = ["Arun Jaitley Stadium", "Feroz Shah Kotla"]
@@ -39,6 +48,10 @@
 "Shaheed Veer Narayan Singh International Stadium, Raipur" = ["Shaheed Veer Narayan Singh International Stadium"]
 "Wankhede Stadium, Mumbai" = ["Wankhede Stadium"]
 "Zayed Cricket Stadium, Abu Dhabi" = ["Sheikh Zayed Stadium"]
+# BBL
+"ENGIE Stadium, Sydney" = ["Sydney Showground Stadium"]
+"Heritage Bank Stadium, Carrara" = ["Metricon Stadium, Carrara"]
+"Marvel Stadium, Melbourne" = ["Etihad Stadium, Melbourne"]
 # Kept apart on purpose: "Sardar Patel Stadium, Motera" (to 2015) and "Narendra Modi
 # Stadium, Ahmedabad" (from 2021) are the same site, but the ground was rebuilt.
 
@@ -66,3 +79,23 @@
 "St George's Park" = []
 "SuperSport Park" = []
 "Vidarbha Cricket Association Stadium, Jamtha" = []
+# BBL
+"ANZ Stadium, Sydney" = []
+"Adelaide Oval" = []
+"Bellerive Oval, Hobart" = []
+"Brisbane Cricket Ground" = []
+"Cazalys Stadium, Cairns" = []
+"GMHBA Stadium, South Geelong, Victoria" = []
+"Geelong Cricket Ground" = []
+"International Sports Stadium, Coffs Harbour" = []
+"Junction Oval, Melbourne" = []
+"Lavington Sports Oval, Albury" = []
+"Manuka Oval, Canberra" = []
+"Melbourne Cricket Ground" = []
+"North Sydney Oval" = []
+"Perth Stadium" = []
+"Sydney Cricket Ground" = []
+"Ted Summerton Reserve, Moe" = []
+"Traeger Park, Alice Springs" = []
+"University of Tasmania Stadium, Launceston" = []
+"WACA, Perth" = []

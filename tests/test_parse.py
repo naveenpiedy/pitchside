@@ -1,4 +1,5 @@
 from pitchside.etl.parse import overs_to_balls, parse_match, phase_of
+from conftest import ball
 
 
 def by_seq(rows, innings_no=1):
@@ -78,3 +79,13 @@ def test_rain_shortened_match_reduces_both_innings(mini_match):
     mini_match["info"]["outcome"] = {"winner": "Blues", "by": {"wickets": 9}, "method": "D/L"}
     rows = parse_match("1", mini_match, "test")
     assert {i["innings_no"]: i["allocated_balls"] for i in rows.innings}[1] == 120
+
+
+def test_first_innings_past_reduced_target_was_not_shortened(mini_match):
+    # A revised 5-over target after a longer first innings, then abandoned: no result, no method.
+    mini_match["info"]["outcome"] = {"result": "no result"}
+    filler = {"over": 2, "deliveries": [ball("A3", "B3", "A1", runs=1)] * 30}
+    mini_match["innings"][0]["overs"].append(filler)
+    rows = parse_match("1", mini_match, "test")
+    inns = {i["innings_no"]: i for i in rows.innings}
+    assert inns[1]["allocated_balls"] == 120 and inns[2]["allocated_balls"] == 30

@@ -16,6 +16,12 @@ def download(url: str, dest: Path, timeout: float = 120.0) -> Path:
     tmp = dest.with_suffix(dest.suffix + ".part")
     with httpx.stream("GET", url, timeout=timeout, follow_redirects=True) as r:
         r.raise_for_status()
+        # Cricsheet sometimes answers scripts with a browser-check page (HTTP 200, HTML).
+        if dest.suffix == ".zip" and r.headers.get("content-type", "").startswith("text/html"):
+            raise RuntimeError(
+                f"{url} returned an HTML page (Cricsheet's browser check), not a zip. "
+                f"Download it in a browser and save it as {dest}"
+            )
         with open(tmp, "wb") as f:
             for chunk in r.iter_bytes():
                 f.write(chunk)

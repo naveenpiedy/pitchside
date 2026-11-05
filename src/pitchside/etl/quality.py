@@ -57,11 +57,16 @@ def run_checks(con: duckdb.DuckDBPyConnection, registry_attached: bool = False) 
     add("scorecard_totals", _count(con, f"SELECT count(*) FROM ({sql})"), sql,
         "scorecard runs + extras match innings totals", "{n} innings where batters' runs + extras differ:")
 
-    # Targets: with no DLS and no reduction, target = first-innings total + 1.
+    # Targets: with no DLS and no reduction, target = first-innings total + 1. Penalty runs
+    # awarded outside the deliveries are accepted when the winning margin confirms the target;
+    # a no-result match can carry a revised target with no method recorded.
     sql = """SELECT m.match_id, i1.runs, i2.target_runs FROM matches m
              JOIN innings i1 ON i1.match_id = m.match_id AND i1.innings_no = 1
              JOIN innings i2 ON i2.match_id = m.match_id AND i2.innings_no = 2
-             WHERE m.method IS NULL AND i2.target_runs IS NOT NULL AND i2.target_runs <> i1.runs + 1"""
+             WHERE m.method IS NULL AND i2.target_runs IS NOT NULL AND i2.target_runs <> i1.runs + 1
+               AND m.result <> 'no result'
+               AND (m.winner IS DISTINCT FROM i1.batting_team
+                    OR m.win_by_runs IS DISTINCT FROM i2.target_runs - 1 - i2.runs)"""
     add("chase_targets", _count(con, f"SELECT count(*) FROM ({sql})"), sql,
         "every non-DLS target is first innings + 1", "{n} chases with an unexpected target:")
 
